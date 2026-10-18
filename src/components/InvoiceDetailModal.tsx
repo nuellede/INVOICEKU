@@ -356,24 +356,25 @@ export const InvoiceDetailModal: React.FC<Props> = ({
 
         {/* Tab Contents (Scrollable) */}
         <div className="p-4 sm:p-6 overflow-y-auto flex-1 bg-slate-950/80">
-          {/* TAB 1: PREVIEW INVOICE WITH 3 TEMPLATES */}
+          {/* TAB 1: PREVIEW INVOICE WITH CLEAN LEFT-ALIGNED LAYOUT */}
           {activeTab === 'preview' && (
             <div className="flex justify-center">
               {/* Paper Printable Sheet Container */}
               <div
                 ref={invoicePrintRef}
-                className={`w-full max-w-2xl bg-white text-slate-900 rounded-2xl shadow-2xl p-6 sm:p-10 font-sans transition-all ${
+                className={`w-full max-w-2xl bg-white text-slate-900 rounded-3xl shadow-2xl p-6 sm:p-10 font-sans transition-all print-container ${
                   invoice.template === 'corporate'
                     ? 'border-t-8 border-t-slate-900'
                     : invoice.template === 'creative'
                     ? 'border-t-8 border-t-indigo-600'
-                    : 'border-t-4 border-t-slate-400'
+                    : 'border-t-6 border-t-slate-600'
                 }`}
                 style={{ minHeight: '800px' }}
               >
-                {/* 1. HEADER BRANDING */}
-                <div className="flex flex-col sm:flex-row justify-between items-start gap-4 pb-6 border-b border-slate-200">
-                  <div>
+                {/* 1. HEADER BRANDING & INVOICE META */}
+                <div className="flex flex-col sm:flex-row justify-between items-start gap-5 pb-6 border-b border-slate-200">
+                  {/* Left Column: Business Profile */}
+                  <div className="text-left space-y-1 max-w-sm">
                     {business.logoUrl ? (
                       <img
                         src={business.logoUrl}
@@ -381,9 +382,9 @@ export const InvoiceDetailModal: React.FC<Props> = ({
                         className="h-12 w-auto object-contain mb-2"
                       />
                     ) : (
-                      <div className="flex items-center gap-2 mb-1">
+                      <div className="flex items-center gap-2.5 mb-2">
                         <div
-                          className={`w-8 h-8 rounded-lg flex items-center justify-center text-white font-black text-sm ${
+                          className={`w-9 h-9 rounded-xl flex items-center justify-center text-white font-black text-sm tracking-wider shadow-sm ${
                             invoice.template === 'creative'
                               ? 'bg-indigo-600'
                               : invoice.template === 'corporate'
@@ -391,102 +392,150 @@ export const InvoiceDetailModal: React.FC<Props> = ({
                               : 'bg-slate-700'
                           }`}
                         >
-                          CI
+                          {business.name
+                            ? business.name
+                                .split(' ')
+                                .map((w) => w[0])
+                                .join('')
+                                .slice(0, 2)
+                                .toUpperCase()
+                            : 'INV'}
                         </div>
                         <h2 className="text-xl font-black text-slate-900 tracking-tight">
                           {business.name}
                         </h2>
                       </div>
                     )}
-                    <p className="text-xs text-slate-500 font-medium">{business.address || 'Indonesia'}</p>
-                    <p className="text-xs text-slate-500">
-                      WA: {business.phone} {business.email ? `• ${business.email}` : ''}
+                    {business.address && (
+                      <p className="text-xs text-slate-500 font-medium leading-relaxed">
+                        {business.address}
+                      </p>
+                    )}
+                    <p className="text-xs text-slate-600">
+                      WhatsApp: <span className="font-semibold text-slate-800">{business.phone}</span>
+                      {business.email && (
+                        <span> • {business.email}</span>
+                      )}
                     </p>
                     {business.npwp && (
-                      <p className="text-[11px] text-slate-400 mt-0.5">NPWP: {business.npwp}</p>
+                      <p className="text-[11px] text-slate-400 font-mono">NPWP: {business.npwp}</p>
                     )}
                   </div>
 
-                  <div className="text-left sm:text-right">
-                    <h1
-                      className={`text-2xl font-black tracking-tight ${
-                        invoice.template === 'creative'
-                          ? 'text-indigo-600'
-                          : invoice.template === 'corporate'
-                          ? 'text-slate-900'
-                          : 'text-slate-800'
-                      }`}
-                    >
-                      INVOICE
-                    </h1>
-                    <p className="text-sm font-mono font-bold text-slate-800 mt-0.5">
-                      {invoice.invoiceNumber}
-                    </p>
-                    <div className="mt-2 text-xs text-slate-600 space-y-0.5">
-                      <div>
-                        Tanggal: <strong>{formatIndonesianDate(invoice.issueDate)}</strong>
+                  {/* Right Column: Invoice Meta Box (All Left-Aligned Inside!) */}
+                  <div className="w-full sm:w-64 bg-slate-50 border border-slate-200 rounded-2xl p-4 text-left space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span
+                        className={`text-lg font-black tracking-tight ${
+                          invoice.template === 'creative'
+                            ? 'text-indigo-600'
+                            : invoice.template === 'corporate'
+                            ? 'text-slate-900'
+                            : 'text-slate-800'
+                        }`}
+                      >
+                        INVOICE
+                      </span>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                          statusConfig[invoice.status].bg
+                        }`}
+                      >
+                        {statusConfig[invoice.status].label}
+                      </span>
+                    </div>
+
+                    <div className="border-t border-slate-200 pt-2 space-y-1 text-xs">
+                      <div className="flex items-center justify-between text-slate-500">
+                        <span>No. Faktur:</span>
+                        <span className="font-mono font-bold text-slate-900">
+                          {invoice.invoiceNumber}
+                        </span>
                       </div>
-                      <div>
-                        Jatuh Tempo: <strong>{formatIndonesianDate(invoice.dueDate)}</strong>
+                      <div className="flex items-center justify-between text-slate-500">
+                        <span>Tanggal Terbit:</span>
+                        <span className="font-medium text-slate-800">
+                          {formatIndonesianDate(invoice.issueDate)}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between text-slate-500">
+                        <span>Jatuh Tempo:</span>
+                        <span className="font-bold text-rose-700">
+                          {formatIndonesianDate(invoice.dueDate)}
+                        </span>
                       </div>
                     </div>
                   </div>
                 </div>
 
-                {/* 2. BILLED TO & PROJECT TITLE */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-5 border-b border-slate-200 text-xs">
-                  <div>
+                {/* 2. BILLED TO & PROJECT DETAILS (2 BALANCED LEFT-ALIGNED CARDS) */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 py-5 border-b border-slate-200 text-xs text-left">
+                  {/* Card 1: Ditagihkan Kepada */}
+                  <div className="bg-slate-50/80 border border-slate-200/80 rounded-2xl p-4 space-y-1">
                     <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1">
                       Ditagihkan Kepada:
                     </span>
-                    <h4 className="text-sm font-bold text-slate-900">{invoice.clientName}</h4>
+                    <h4 className="text-sm font-bold text-slate-950">{invoice.clientName}</h4>
                     {invoice.clientCompany && (
-                      <p className="font-semibold text-slate-700 mt-0.5">{invoice.clientCompany}</p>
+                      <p className="font-semibold text-slate-700">{invoice.clientCompany}</p>
                     )}
-                    {invoice.clientPhone && <p className="text-slate-500 mt-0.5">{invoice.clientPhone}</p>}
+                    <p className="text-slate-600">
+                      WhatsApp: {invoice.clientPhone}
+                      {invoice.clientEmail && ` • ${invoice.clientEmail}`}
+                    </p>
                     {invoice.clientAddress && (
-                      <p className="text-slate-500 mt-0.5 leading-relaxed">{invoice.clientAddress}</p>
+                      <p className="text-slate-500 leading-relaxed pt-0.5">
+                        {invoice.clientAddress}
+                      </p>
                     )}
                     {invoice.clientNpwp && (
-                      <p className="text-slate-400 mt-0.5">NPWP: {invoice.clientNpwp}</p>
+                      <p className="text-slate-400 font-mono text-[11px]">
+                        NPWP: {invoice.clientNpwp}
+                      </p>
                     )}
                   </div>
 
-                  <div className="sm:text-right">
+                  {/* Card 2: Rincian Proyek (All Left-Aligned) */}
+                  <div className="bg-slate-50/80 border border-slate-200/80 rounded-2xl p-4 space-y-1">
                     <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider block mb-1">
-                      Deskripsi Project Video:
+                      Rincian Proyek Video:
                     </span>
-                    <p className="text-sm font-bold text-slate-900">{invoice.projectTitle}</p>
-                    <div className="mt-2 inline-block px-2.5 py-1 rounded-md text-[11px] font-bold border border-slate-300 bg-slate-50 text-slate-800 uppercase">
-                      Status: {statusConfig[invoice.status].label}
-                    </div>
+                    <h4 className="text-sm font-bold text-slate-950 leading-snug">
+                      {invoice.projectTitle}
+                    </h4>
+                    <p className="text-slate-600 text-[11px] pt-1">
+                      Kategori: Layanan Video Production & Kreatif
+                    </p>
+                    <p className="text-slate-500 text-[11px]">
+                      Batas Pelunasan: {formatIndonesianDate(invoice.dueDate)}
+                    </p>
                   </div>
                 </div>
 
-                {/* 3. LINE ITEMS TABLE */}
+                {/* 3. LINE ITEMS TABLE (CLEAN LEFT-ALIGNED ITEMS) */}
                 <div className="py-5">
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr
                         className={`border-b text-[11px] font-bold uppercase tracking-wider ${
                           invoice.template === 'creative'
-                            ? 'bg-indigo-50/70 text-indigo-900 border-indigo-100'
+                            ? 'bg-indigo-50/80 text-indigo-950 border-indigo-100'
                             : invoice.template === 'corporate'
-                            ? 'bg-slate-100 text-slate-800 border-slate-300'
-                            : 'bg-slate-50 text-slate-600 border-slate-200'
+                            ? 'bg-slate-100 text-slate-900 border-slate-300'
+                            : 'bg-slate-50 text-slate-700 border-slate-200'
                         }`}
                       >
-                        <th className="py-2.5 px-3">Item / Layanan</th>
-                        <th className="py-2.5 px-2 text-center">Qty</th>
-                        <th className="py-2.5 px-2 text-center">Satuan</th>
-                        <th className="py-2.5 px-3 text-right">Tarif</th>
-                        <th className="py-2.5 px-3 text-right">Total</th>
+                        <th className="py-3 px-4 text-left">Item / Layanan Video</th>
+                        <th className="py-3 px-2 text-center">Qty</th>
+                        <th className="py-3 px-2 text-center">Satuan</th>
+                        <th className="py-3 px-4 text-right">Tarif Satuan</th>
+                        <th className="py-3 px-4 text-right">Total</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {invoice.items.map((item, idx) => (
-                        <tr key={item.id || idx}>
-                          <td className="py-3 px-3 font-medium text-slate-900">
+                        <tr key={item.id || idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                          <td className="py-3 px-4 font-medium text-slate-900 text-left">
                             {item.description}
                           </td>
                           <td className="py-3 px-2 text-center font-mono text-slate-700">
@@ -495,10 +544,10 @@ export const InvoiceDetailModal: React.FC<Props> = ({
                           <td className="py-3 px-2 text-center text-slate-500 capitalize">
                             {item.unit}
                           </td>
-                          <td className="py-3 px-3 text-right font-mono text-slate-700">
+                          <td className="py-3 px-4 text-right font-mono text-slate-700">
                             {formatIDR(item.price)}
                           </td>
-                          <td className="py-3 px-3 text-right font-mono font-bold text-slate-900">
+                          <td className="py-3 px-4 text-right font-mono font-bold text-slate-900">
                             {formatIDR(item.amount)}
                           </td>
                         </tr>
@@ -507,28 +556,41 @@ export const InvoiceDetailModal: React.FC<Props> = ({
                   </table>
                 </div>
 
-                {/* 4. TOTALS & SUMMARY */}
-                <div className="pt-4 border-t border-slate-200 flex flex-col sm:flex-row justify-between gap-6 text-xs">
-                  <div className="space-y-3 max-w-sm">
-                    {invoice.bankDetails && (
-                      <div className="p-3 rounded-xl bg-slate-50 border border-slate-200">
+                {/* 4. TOTALS & SUMMARY SECTION */}
+                <div className="pt-4 border-t border-slate-200 flex flex-col sm:flex-row justify-between gap-6 text-xs text-left">
+                  {/* Left: Instruksi Pembayaran Rekening */}
+                  <div className="space-y-3 max-w-sm flex-1">
+                    {invoice.bankDetails ? (
+                      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
                         <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block mb-1">
                           Instruksi Rekening Pembayaran:
                         </span>
-                        <p className="text-slate-700 whitespace-pre-line text-xs font-medium">
+                        <p className="text-slate-800 whitespace-pre-line text-xs font-medium leading-relaxed">
                           {invoice.bankDetails}
                         </p>
+                      </div>
+                    ) : (
+                      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-1">
+                        <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block mb-1">
+                          Instruksi Rekening Pembayaran:
+                        </span>
+                        <p className="text-xs text-slate-800 font-semibold">{business.bankName}</p>
+                        <p className="text-sm font-mono font-bold text-indigo-700">
+                          {business.bankAccountNumber}
+                        </p>
+                        <p className="text-xs text-slate-600">a.n. {business.bankAccountHolder}</p>
                       </div>
                     )}
 
                     {invoice.notes && (
-                      <div className="text-[11px] text-slate-500 leading-relaxed">
-                        <strong className="text-slate-700">Catatan:</strong> {invoice.notes}
+                      <div className="text-[11px] text-slate-500 leading-relaxed p-2 bg-slate-50/50 rounded-xl">
+                        <strong className="text-slate-700">Catatan Tambahan:</strong> {invoice.notes}
                       </div>
                     )}
                   </div>
 
-                  <div className="w-full sm:w-64 space-y-1.5 text-right font-mono text-xs">
+                  {/* Right: Ringkasan Biaya (Clean Ledger) */}
+                  <div className="w-full sm:w-72 space-y-1.5 font-mono text-xs">
                     <div className="flex justify-between py-1 text-slate-600">
                       <span>Subtotal:</span>
                       <span>{formatIDR(invoice.subtotal)}</span>
@@ -548,38 +610,38 @@ export const InvoiceDetailModal: React.FC<Props> = ({
                       </div>
                     )}
 
-                    <div className="flex justify-between py-2 border-t-2 border-slate-800 text-sm font-black text-slate-900">
+                    <div className="flex items-center justify-between py-2.5 px-3 rounded-xl bg-slate-900 text-white text-sm font-black shadow-sm mt-1">
                       <span>Grand Total:</span>
                       <span>{formatIDR(invoice.grandTotal)}</span>
                     </div>
 
                     {invoice.paidAmount > 0 && (
-                      <div className="flex justify-between py-1 text-emerald-600 font-semibold">
+                      <div className="flex justify-between py-1 text-emerald-600 font-semibold px-1">
                         <span>Sudah Dibayar:</span>
                         <span>- {formatIDR(invoice.paidAmount)}</span>
                       </div>
                     )}
 
-                    <div className="flex justify-between py-1.5 border-t border-slate-200 text-xs font-bold text-amber-700 bg-amber-50 px-2 rounded-lg">
+                    <div className="flex items-center justify-between py-2 px-3 border border-amber-200 text-xs font-bold text-amber-800 bg-amber-50 rounded-xl mt-1">
                       <span>Sisa Tagihan:</span>
-                      <span>{formatIDR(invoice.outstandingAmount)}</span>
+                      <span className="font-mono text-sm">{formatIDR(invoice.outstandingAmount)}</span>
                     </div>
                   </div>
                 </div>
 
-                {/* 5. FORMAL STAMP & SIGNATURE (FOR CORPORATE TEMPLATE) */}
-                {invoice.template === 'corporate' && (
-                  <div className="mt-12 pt-6 border-t border-slate-200 flex justify-between items-end text-xs text-slate-600">
-                    <div>
-                      <p className="text-[10px] text-slate-400">Dibuat secara elektronik melalui CineInvoice SaaS.</p>
-                    </div>
-                    <div className="text-center w-40">
-                      <p className="mb-14 font-semibold text-slate-800">Hormat Kami,</p>
-                      <div className="border-b border-slate-400 mb-1" />
-                      <p className="font-bold text-slate-900">{business.name}</p>
-                    </div>
+                {/* 5. OFFICIAL SIGNATURE & CLOSING (NO SAAS WATERMARK) */}
+                <div className="mt-10 pt-6 border-t border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-end gap-6 text-xs text-slate-600">
+                  <div className="text-left">
+                    <p className="text-xs text-slate-500">
+                      Terima kasih atas kerja sama dan kepercayaan Anda.
+                    </p>
                   </div>
-                )}
+                  <div className="text-center sm:text-right w-full sm:w-48">
+                    <p className="font-medium text-slate-700 mb-12">Hormat Kami,</p>
+                    <div className="border-b border-slate-400 mb-1.5 w-36 ml-auto" />
+                    <p className="font-bold text-slate-900">{business.name}</p>
+                  </div>
+                </div>
               </div>
             </div>
           )}
