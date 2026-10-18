@@ -25,8 +25,7 @@ import {
   Trash2,
   Lock,
 } from 'lucide-react';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
+import { downloadInvoicePdf } from '../utils/pdfGenerator';
 import * as XLSX from 'xlsx';
 
 interface Props {
@@ -91,27 +90,14 @@ export const InvoiceDetailModal: React.FC<Props> = ({
   };
 
   // PDF Export
-  const handleDownloadPdf = async () => {
-    if (!invoicePrintRef.current) return;
+  const handleDownloadPdf = () => {
     setIsGeneratingPdf(true);
     try {
-      const canvas = await html2canvas(invoicePrintRef.current, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-      });
-
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`Invoice_${invoice.invoiceNumber.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`);
+      downloadInvoicePdf(invoice, business);
     } catch (error) {
       console.error('PDF generation error', error);
-      alert('Gagal membuat PDF. Silakan gunakan fungsi cetak browser.');
+      // Fallback: trigger browser print
+      window.print();
     } finally {
       setIsGeneratingPdf(false);
     }
@@ -295,7 +281,16 @@ export const InvoiceDetailModal: React.FC<Props> = ({
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-sky-600 hover:bg-sky-500 text-white text-xs font-semibold shadow-md shadow-sky-600/20 transition active:scale-95 disabled:opacity-50"
             >
               <Download className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">{isGeneratingPdf ? 'Membuat PDF...' : 'PDF'}</span>
+              <span className="hidden sm:inline">{isGeneratingPdf ? 'Membuat PDF...' : 'Download PDF'}</span>
+            </button>
+
+            <button
+              onClick={() => window.print()}
+              title="Cetak Invoice Langsung"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold transition active:scale-95"
+            >
+              <Printer className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">Cetak</span>
             </button>
 
             <button

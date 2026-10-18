@@ -2,9 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { getSharedInvoice } from '../services/db';
 import { SharedInvoice, Invoice, Business } from '../types';
 import { formatIDR, formatIndonesianDate } from '../utils/formatters';
+import { downloadInvoicePdf } from '../utils/pdfGenerator';
 import { FileText, Download, CheckCircle2, Building, AlertCircle } from 'lucide-react';
-import html2canvas from 'html2canvas';
-import jsPDF from 'jspdf';
 
 interface Props {
   token: string;
@@ -41,27 +40,14 @@ export const SharedInvoiceView: React.FC<Props> = ({ token, onExit }) => {
     fetchShared();
   }, [token]);
 
-  const handleDownloadPdf = async () => {
-    if (!printRef.current || !data) return;
+  const handleDownloadPdf = () => {
+    if (!data) return;
     setIsGeneratingPdf(true);
     try {
-      const canvas = await html2canvas(printRef.current, {
-        scale: 2,
-        useCORS: true,
-        logging: false,
-        backgroundColor: '#ffffff',
-      });
-
-      const imgData = canvas.toDataURL('image/png');
-      const pdf = new jsPDF('p', 'mm', 'a4');
-      const pdfWidth = pdf.internal.pageSize.getWidth();
-      const pdfHeight = (canvas.height * pdfWidth) / canvas.width;
-
-      pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
-      pdf.save(`Invoice_${data.invoice.invoiceNumber.replace(/[^a-zA-Z0-9_-]/g, '_')}.pdf`);
+      downloadInvoicePdf(data.invoice, data.business);
     } catch (e) {
       console.error(e);
-      alert('Gagal mendownload PDF.');
+      window.print();
     } finally {
       setIsGeneratingPdf(false);
     }
