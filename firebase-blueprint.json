@@ -1,0 +1,268 @@
+{
+  "entities": {
+    "Business": {
+      "title": "Business",
+      "description": "Multi-tenant workspace for freelancers or UMKM businesses",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 100 },
+        "type": { "type": "string", "enum": ["freelancer", "umkm"] },
+        "ownerId": { "type": "string", "maxLength": 128 },
+        "ownerEmail": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 128 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "address": { "type": "string", "maxLength": 250 },
+        "website": { "type": "string", "maxLength": 150 },
+        "npwp": { "type": "string", "maxLength": 50 },
+        "logoUrl": { "type": "string", "maxLength": 500 },
+        "currency": { "type": "string", "maxLength": 10 },
+        "invoicePrefix": { "type": "string", "maxLength": 30 },
+        "nextInvoiceNumber": { "type": "number" },
+        "defaultPaymentTermsDays": { "type": "number" },
+        "defaultTemplate": { "type": "string", "enum": ["corporate", "minimalist", "creative"] },
+        "ppnEnabled": { "type": "boolean" },
+        "ppnRate": { "type": "number" },
+        "bankName": { "type": "string", "maxLength": 50 },
+        "bankAccountNumber": { "type": "string", "maxLength": 50 },
+        "bankAccountHolder": { "type": "string", "maxLength": 100 },
+        "defaultNotes": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "name", "type", "ownerId", "ownerEmail"]
+    },
+    "Member": {
+      "title": "Member",
+      "description": "Workspace member with specific RBAC role",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128 },
+        "businessId": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 100 },
+        "role": { "type": "string", "enum": ["owner", "admin", "finance", "staff"] },
+        "invitedBy": { "type": "string", "maxLength": 128 },
+        "joinedAt": { "type": "string" }
+      },
+      "required": ["userId", "businessId", "email", "role"]
+    },
+    "Client": {
+      "title": "Client",
+      "description": "Client profile registered by the business",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "businessId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 100 },
+        "company": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "maxLength": 128 },
+        "phone": { "type": "string", "maxLength": 32 },
+        "address": { "type": "string", "maxLength": 250 },
+        "npwp": { "type": "string", "maxLength": 50 },
+        "notes": { "type": "string", "maxLength": 500 },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "businessId", "name", "phone"]
+    },
+    "ServiceItem": {
+      "title": "ServiceItem",
+      "description": "Video production service item catalog",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "businessId": { "type": "string", "maxLength": 128 },
+        "name": { "type": "string", "maxLength": 100 },
+        "category": { "type": "string", "maxLength": 50 },
+        "description": { "type": "string", "maxLength": 300 },
+        "unit": { "type": "string", "maxLength": 30 },
+        "defaultPrice": { "type": "number" },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "businessId", "name", "unit", "defaultPrice"]
+    },
+    "Invoice": {
+      "title": "Invoice",
+      "description": "Video production invoice with items, calculations, and tax",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "businessId": { "type": "string", "maxLength": 128 },
+        "invoiceNumber": { "type": "string", "maxLength": 50 },
+        "clientId": { "type": "string", "maxLength": 128 },
+        "clientName": { "type": "string", "maxLength": 100 },
+        "clientCompany": { "type": "string", "maxLength": 100 },
+        "clientPhone": { "type": "string", "maxLength": 32 },
+        "clientEmail": { "type": "string", "maxLength": 128 },
+        "clientAddress": { "type": "string", "maxLength": 250 },
+        "clientNpwp": { "type": "string", "maxLength": 50 },
+        "projectTitle": { "type": "string", "maxLength": 150 },
+        "issueDate": { "type": "string", "maxLength": 30 },
+        "dueDate": { "type": "string", "maxLength": 30 },
+        "status": { "type": "string", "enum": ["draft", "sent", "partially_paid", "paid", "overdue", "cancelled"] },
+        "template": { "type": "string", "enum": ["corporate", "minimalist", "creative"] },
+        "subtotal": { "type": "number" },
+        "discountType": { "type": "string", "enum": ["fixed", "percent"] },
+        "discountValue": { "type": "number" },
+        "discountTotal": { "type": "number" },
+        "ppnEnabled": { "type": "boolean" },
+        "ppnRate": { "type": "number" },
+        "ppnAmount": { "type": "number" },
+        "grandTotal": { "type": "number" },
+        "paidAmount": { "type": "number" },
+        "outstandingAmount": { "type": "number" },
+        "downPayment": { "type": "number" },
+        "notes": { "type": "string", "maxLength": 1000 },
+        "bankDetails": { "type": "string", "maxLength": 500 },
+        "shareToken": { "type": "string", "maxLength": 128 },
+        "createdBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "businessId", "invoiceNumber", "clientId", "status", "grandTotal", "outstandingAmount"]
+    },
+    "Payment": {
+      "title": "Payment",
+      "description": "Payment receipt logged against an invoice",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "businessId": { "type": "string", "maxLength": 128 },
+        "invoiceId": { "type": "string", "maxLength": 128 },
+        "invoiceNumber": { "type": "string", "maxLength": 50 },
+        "amount": { "type": "number" },
+        "date": { "type": "string", "maxLength": 30 },
+        "method": { "type": "string", "maxLength": 50 },
+        "reference": { "type": "string", "maxLength": 100 },
+        "notes": { "type": "string", "maxLength": 300 },
+        "recordedBy": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string" }
+      },
+      "required": ["id", "businessId", "invoiceId", "amount", "date", "method"]
+    },
+    "Setting": {
+      "title": "Setting",
+      "description": "Tenant specific configuration settings",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "businessId": { "type": "string", "maxLength": 128 },
+        "key": { "type": "string", "maxLength": 100 },
+        "value": { "type": "string", "maxLength": 1000 },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["id", "businessId", "key"]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Security and activity audit log for business actions",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "businessId": { "type": "string", "maxLength": 128 },
+        "action": { "type": "string", "maxLength": 50 },
+        "actorId": { "type": "string", "maxLength": 128 },
+        "actorEmail": { "type": "string", "maxLength": 128 },
+        "details": { "type": "string", "maxLength": 500 },
+        "timestamp": { "type": "string" }
+      },
+      "required": ["id", "businessId", "action", "actorId", "timestamp"]
+    },
+    "Invitation": {
+      "title": "Invitation",
+      "description": "Workspace team member invitation link or code",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128 },
+        "businessId": { "type": "string", "maxLength": 128 },
+        "businessName": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "maxLength": 128 },
+        "role": { "type": "string", "enum": ["admin", "finance", "staff"] },
+        "invitedBy": { "type": "string", "maxLength": 128 },
+        "invitedByEmail": { "type": "string", "maxLength": 128 },
+        "status": { "type": "string", "enum": ["pending", "accepted", "revoked", "expired"] },
+        "createdAt": { "type": "string" },
+        "expiresAt": { "type": "string" }
+      },
+      "required": ["id", "businessId", "businessName", "email", "role", "status"]
+    },
+    "SharedInvoice": {
+      "title": "SharedInvoice",
+      "description": "Public unguessable token link for client invoice review",
+      "type": "object",
+      "properties": {
+        "token": { "type": "string", "maxLength": 128 },
+        "businessId": { "type": "string", "maxLength": 128 },
+        "invoiceId": { "type": "string", "maxLength": 128 },
+        "invoiceData": { "type": "string", "maxLength": 50000 },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "expiresAt": { "type": "string" }
+      },
+      "required": ["token", "businessId", "invoiceId", "active"]
+    },
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "User account metadata and list of business memberships",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128 },
+        "email": { "type": "string", "maxLength": 128 },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "photoURL": { "type": "string", "maxLength": 500 },
+        "defaultBusinessId": { "type": "string", "maxLength": 128 },
+        "isPlatformAdmin": { "type": "boolean" },
+        "createdAt": { "type": "string" },
+        "updatedAt": { "type": "string" }
+      },
+      "required": ["uid", "email"]
+    }
+  },
+  "firestore": {
+    "/businesses/{businessId}": {
+      "schema": { "$ref": "#/entities/Business" },
+      "description": "Tenant business workspace documents"
+    },
+    "/businesses/{businessId}/members/{userId}": {
+      "schema": { "$ref": "#/entities/Member" },
+      "description": "Workspace member roles and permissions"
+    },
+    "/businesses/{businessId}/clients/{clientId}": {
+      "schema": { "$ref": "#/entities/Client" },
+      "description": "Clients owned by the business"
+    },
+    "/businesses/{businessId}/serviceCatalog/{serviceId}": {
+      "schema": { "$ref": "#/entities/ServiceItem" },
+      "description": "Service catalog items for the business"
+    },
+    "/businesses/{businessId}/invoices/{invoiceId}": {
+      "schema": { "$ref": "#/entities/Invoice" },
+      "description": "Video production invoices"
+    },
+    "/businesses/{businessId}/payments/{paymentId}": {
+      "schema": { "$ref": "#/entities/Payment" },
+      "description": "Payment records for invoices"
+    },
+    "/businesses/{businessId}/settings/{settingsId}": {
+      "schema": { "$ref": "#/entities/Setting" },
+      "description": "Business settings"
+    },
+    "/businesses/{businessId}/auditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Audit trail"
+    },
+    "/invitations/{invitationId}": {
+      "schema": { "$ref": "#/entities/Invitation" },
+      "description": "Team workspace invitations"
+    },
+    "/sharedInvoices/{shareToken}": {
+      "schema": { "$ref": "#/entities/SharedInvoice" },
+      "description": "Public unguessable tokens for client invoice sharing"
+    },
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserProfile" },
+      "description": "User profiles"
+    }
+  }
+}

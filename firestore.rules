@@ -1,0 +1,115 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default deny all
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isUser(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isMember(businessId) {
+      return isSignedIn() && exists(/databases/$(database)/documents/businesses/$(businessId)/members/$(request.auth.uid));
+    }
+
+    function getMemberRole(businessId) {
+      return get(/databases/$(database)/documents/businesses/$(businessId)/members/$(request.auth.uid)).data.role;
+    }
+
+    function isOwner(businessId) {
+      return isSignedIn() && (
+        (exists(/databases/$(database)/documents/businesses/$(businessId)) && get(/databases/$(database)/documents/businesses/$(businessId)).data.ownerId == request.auth.uid) ||
+        (isMember(businessId) && getMemberRole(businessId) == 'owner')
+      );
+    }
+
+    function isOwnerOrAdmin(businessId) {
+      return isOwner(businessId) || (isMember(businessId) && getMemberRole(businessId) == 'admin');
+    }
+
+    // User profiles
+    match /users/{userId} {
+      allow read: if isUser(userId);
+      allow create, update: if isUser(userId);
+      allow delete: if false;
+    }
+
+    // Tenant Business Workspace
+    match /businesses/{businessId} {
+      allow read: if isMember(businessId) || (isSignedIn() && resource.data.ownerId == request.auth.uid);
+      allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
+      allow update: if isOwnerOrAdmin(businessId);
+      allow delete: if isOwner(businessId);
+
+      // Members subcollection
+      match /members/{memberId} {
+        allow read: if isMember(businessId) || isUser(memberId);
+        allow create: if isOwnerOrAdmin(businessId) || (isUser(memberId) && request.resource.data.role == 'owner');
+        allow update: if isOwner(businessId);
+        allow delete: if isOwner(businessId) && memberId != request.auth.uid; // Prevent removing last owner directly
+      }
+
+      // Clients subcollection
+      match /clients/{clientId} {
+        allow read: if isMember(businessId);
+        allow create, update: if isMember(businessId);
+        allow delete: if isOwnerOrAdmin(businessId);
+      }
+
+      // Service Catalog subcollection
+      match /serviceCatalog/{serviceId} {
+        allow read: if isMember(businessId);
+        allow create, update, delete: if isOwnerOrAdmin(businessId);
+      }
+
+      // Invoices subcollection
+      match /invoices/{invoiceId} {
+        allow read: if isMember(businessId);
+        allow create, update: if isMember(businessId);
+        allow delete: if isOwnerOrAdmin(businessId);
+      }
+
+      // Payments subcollection
+      match /payments/{paymentId} {
+        allow read: if isMember(businessId);
+        allow create: if isMember(businessId);
+        allow update, delete: if isOwnerOrAdmin(businessId);
+      }
+
+      // Settings subcollection
+      match /settings/{settingId} {
+        allow read: if isMember(businessId);
+        allow write: if isOwnerOrAdmin(businessId);
+      }
+
+      // Audit logs
+      match /auditLogs/{logId} {
+        allow read: if isOwnerOrAdmin(businessId);
+        allow create: if isMember(businessId);
+        allow update, delete: if false;
+      }
+    }
+
+    // Invitations
+    match /invitations/{invitationId} {
+      allow read: if isSignedIn();
+      allow create: if isSignedIn();
+      allow update: if isSignedIn();
+      allow delete: if isSignedIn();
+    }
+
+    // Shared Invoices (Read-only public token access for clients)
+    match /sharedInvoices/{shareToken} {
+      allow read: if true;
+      allow create, update: if isSignedIn();
+      allow delete: if isSignedIn();
+    }
+  }
+}

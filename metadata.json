@@ -1,0 +1,6 @@
+{
+  "name": "CineInvoice - Multi-Tenant Video Production Invoice SaaS",
+  "description": "Multi-tenant SaaS invoice manager for video production freelancers and creative UMKM agencies with PPN calculations, PDF & Excel exports, WhatsApp billing, and PWA mobile installation.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
