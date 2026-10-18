@@ -108,7 +108,16 @@ export const OnboardingWizard: React.FC = () => {
       await refreshWorkspaces();
     } catch (err: unknown) {
       console.error('Failed to finish onboarding:', err);
-      setError(err instanceof Error ? err.message : 'Gagal membuat workspace bisnis.');
+      let msg = 'Gagal membuat workspace bisnis.';
+      if (err instanceof Error) {
+        try {
+          const parsed = JSON.parse(err.message);
+          msg = parsed.error || err.message;
+        } catch {
+          msg = err.message;
+        }
+      }
+      setError(msg);
       setIsSubmitting(false);
     }
   };

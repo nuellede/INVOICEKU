@@ -156,6 +156,7 @@ export interface UserProfile {
   displayName: string;
   photoURL?: string;
   defaultBusinessId?: string;
+  memberships?: Member[];
   isPlatformAdmin?: boolean;
   createdAt: string;
   updatedAt: string;

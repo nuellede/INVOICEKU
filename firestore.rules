@@ -41,6 +41,11 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // Collection group query for user memberships across all businesses
+    match /{path=**}/members/{memberId} {
+      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || request.auth.uid == memberId);
+    }
+
     // Tenant Business Workspace
     match /businesses/{businessId} {
       allow read: if isMember(businessId) || (isSignedIn() && resource.data.ownerId == request.auth.uid);

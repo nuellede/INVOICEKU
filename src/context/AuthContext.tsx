@@ -173,12 +173,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         setIsOnboardingNeeded(true);
       } else {
         setIsOnboardingNeeded(false);
-        if (currentBusiness) {
-          const updatedBiz = await getBusiness(currentBusiness.id);
-          if (updatedBiz) setCurrentBusiness(updatedBiz);
-          const currentMem = memberships.find((m) => m.businessId === currentBusiness.id);
-          if (currentMem) setCurrentRole(currentMem.role);
+        const targetId = currentBusiness?.id || profile?.defaultBusinessId || memberships[0].businessId;
+        const updatedBiz = await getBusiness(targetId);
+        if (updatedBiz) {
+          setCurrentBusiness(updatedBiz);
+        } else {
+          const firstBiz = await getBusiness(memberships[0].businessId);
+          if (firstBiz) setCurrentBusiness(firstBiz);
         }
+        const currentMem = memberships.find((m) => m.businessId === targetId) || memberships[0];
+        if (currentMem) setCurrentRole(currentMem.role);
       }
     }
   };

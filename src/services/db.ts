@@ -126,12 +126,53 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
 
 // USER WORKSPACES
 export async function getUserMemberships(userId: string): Promise<Member[]> {
+  // 1. Check user profile document first (direct read, never fails collection group permissions or index constraints)
+  let profileMemberships: Member[] = [];
+  try {
+    const profSnap = await getDoc(doc(db, 'users', userId));
+    if (profSnap.exists()) {
+      const data = profSnap.data();
+      if (Array.isArray(data.memberships) && data.memberships.length > 0) {
+        profileMemberships = data.memberships as Member[];
+      } else if (data.defaultBusinessId) {
+        profileMemberships = [
+          {
+            userId,
+            businessId: data.defaultBusinessId,
+            email: data.email || '',
+            name: data.displayName || 'Owner',
+            role: 'owner',
+            joinedAt: data.createdAt || new Date().toISOString(),
+          },
+        ];
+      }
+    }
+  } catch (e) {
+    console.warn('Profile read fallback notice:', e);
+  }
+
+  // 2. Query collectionGroup 'members'
   const path = 'members (collectionGroup)';
   try {
     const q = query(collectionGroup(db, 'members'), where('userId', '==', userId));
     const snap = await getDocs(q);
-    return snap.docs.map((d) => d.data() as Member);
+    const list = snap.docs.map((d) => d.data() as Member);
+    if (list.length > 0) {
+      try {
+        await updateDoc(doc(db, 'users', userId), { memberships: list });
+      } catch {
+        // ignore update errors
+      }
+      return list;
+    }
+    return profileMemberships;
   } catch (error) {
+    console.warn('CollectionGroup members query notice:', error);
+    // If profile has memberships or defaultBusinessId, use it seamlessly without breaking UI
+    if (profileMemberships.length > 0) {
+      return profileMemberships;
+    }
+    // If no fallback available, throw contextual error
     handleFirestoreError(error, OperationType.LIST, path);
   }
 }
@@ -233,12 +274,13 @@ export async function createBusinessWorkspace(
       await setDoc(doc(db, `businesses/${businessId}/serviceCatalog`, sId), serviceDoc);
     }
 
-    // 4. Update user profile default business
+    // 4. Update user profile default business and memberships
     await saveUserProfile({
       uid: owner.uid,
       email: owner.email,
       displayName: owner.displayName || owner.email.split('@')[0],
       defaultBusinessId: businessId,
+      memberships: [member],
       createdAt: now,
       updatedAt: now,
     });
@@ -355,6 +397,21 @@ export async function acceptInvitation(invitation: Invitation, user: { uid: stri
     await setDoc(doc(db, memberPath), member);
     // 2. Update invitation status
     await updateDoc(doc(db, invPath), { status: 'accepted' });
+    // 3. Update user profile memberships
+    try {
+      const prof = await getUserProfile(user.uid);
+      if (prof) {
+        const existing = prof.memberships || [];
+        const filtered = existing.filter((m) => m.businessId !== invitation.businessId);
+        await saveUserProfile({
+          ...prof,
+          defaultBusinessId: prof.defaultBusinessId || invitation.businessId,
+          memberships: [...filtered, member],
+        });
+      }
+    } catch {
+      // ignore
+    }
   } catch (error) {
     handleFirestoreError(error, OperationType.WRITE, memberPath);
   }
