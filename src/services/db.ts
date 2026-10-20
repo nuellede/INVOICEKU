@@ -124,57 +124,144 @@ export async function saveUserProfile(profile: UserProfile): Promise<void> {
   }
 }
 
-// USER WORKSPACES
-export async function getUserMemberships(userId: string): Promise<Member[]> {
-  // 1. Check user profile document first (direct read, never fails collection group permissions or index constraints)
-  let profileMemberships: Member[] = [];
+// BUSINESSES BY OWNER DIRECT QUERY
+export async function getBusinessesByOwner(userId: string): Promise<Business[]> {
+  try {
+    const q = query(collection(db, 'businesses'), where('ownerId', '==', userId));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data() as Business);
+  } catch (error) {
+    console.warn('Failed to query businesses by owner:', error);
+    return [];
+  }
+}
+
+// BUSINESSES BY OWNER EMAIL DIRECT QUERY
+export async function getBusinessesByEmail(email: string): Promise<Business[]> {
+  if (!email) return [];
+  try {
+    const cleanEmail = email.toLowerCase().trim();
+    const q = query(collection(db, 'businesses'), where('ownerEmail', '==', cleanEmail));
+    const snap = await getDocs(q);
+    return snap.docs.map((d) => d.data() as Business);
+  } catch (error) {
+    console.warn('Failed to query businesses by ownerEmail:', error);
+    return [];
+  }
+}
+
+// USER WORKSPACES DISCOVERY
+export async function getUserMemberships(userId: string, userEmail?: string): Promise<Member[]> {
+  const membershipsMap = new Map<string, Member>();
+
+  // 1. Direct query businesses owned by this user (Primary, fast, authoritative)
+  try {
+    const ownedBizs = await getBusinessesByOwner(userId);
+    for (const biz of ownedBizs) {
+      membershipsMap.set(biz.id, {
+        userId,
+        businessId: biz.id,
+        email: biz.ownerEmail || userEmail || '',
+        name: biz.name || 'Owner',
+        role: 'owner',
+        joinedAt: biz.createdAt || new Date().toISOString(),
+      });
+    }
+  } catch (e) {
+    console.warn('Owned businesses check notice:', e);
+  }
+
+  // 2. Direct query businesses by owner email (handles re-registration or UID drift)
+  if (userEmail) {
+    try {
+      const emailBizs = await getBusinessesByEmail(userEmail);
+      for (const biz of emailBizs) {
+        if (!membershipsMap.has(biz.id)) {
+          membershipsMap.set(biz.id, {
+            userId,
+            businessId: biz.id,
+            email: biz.ownerEmail || userEmail,
+            name: biz.name || 'Owner',
+            role: 'owner',
+            joinedAt: biz.createdAt || new Date().toISOString(),
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('Email businesses check notice:', e);
+    }
+  }
+
+  // 3. Check user profile document (contains memberships array & defaultBusinessId)
   try {
     const profSnap = await getDoc(doc(db, 'users', userId));
     if (profSnap.exists()) {
       const data = profSnap.data();
-      if (Array.isArray(data.memberships) && data.memberships.length > 0) {
-        profileMemberships = data.memberships as Member[];
-      } else if (data.defaultBusinessId) {
-        profileMemberships = [
-          {
-            userId,
-            businessId: data.defaultBusinessId,
-            email: data.email || '',
-            name: data.displayName || 'Owner',
-            role: 'owner',
-            joinedAt: data.createdAt || new Date().toISOString(),
-          },
-        ];
+      if (Array.isArray(data.memberships)) {
+        for (const m of data.memberships) {
+          if (m && m.businessId) membershipsMap.set(m.businessId, m);
+        }
+      }
+      if (data.defaultBusinessId && !membershipsMap.has(data.defaultBusinessId)) {
+        membershipsMap.set(data.defaultBusinessId, {
+          userId,
+          businessId: data.defaultBusinessId,
+          email: data.email || userEmail || '',
+          name: data.displayName || 'Owner',
+          role: 'owner',
+          joinedAt: data.createdAt || new Date().toISOString(),
+        });
       }
     }
   } catch (e) {
     console.warn('Profile read fallback notice:', e);
   }
 
-  // 2. Query collectionGroup 'members'
-  const path = 'members (collectionGroup)';
+  // 4. Query collectionGroup 'members' (for invited team memberships)
   try {
     const q = query(collectionGroup(db, 'members'), where('userId', '==', userId));
     const snap = await getDocs(q);
-    const list = snap.docs.map((d) => d.data() as Member);
-    if (list.length > 0) {
-      try {
-        await updateDoc(doc(db, 'users', userId), { memberships: list });
-      } catch {
-        // ignore update errors
-      }
-      return list;
+    for (const d of snap.docs) {
+      const m = d.data() as Member;
+      if (m && m.businessId) membershipsMap.set(m.businessId, m);
     }
-    return profileMemberships;
   } catch (error) {
     console.warn('CollectionGroup members query notice:', error);
-    // If profile has memberships or defaultBusinessId, use it seamlessly without breaking UI
-    if (profileMemberships.length > 0) {
-      return profileMemberships;
-    }
-    // If no fallback available, throw contextual error
-    handleFirestoreError(error, OperationType.LIST, path);
   }
+
+  // 5. LocalStorage fallback if available
+  if (membershipsMap.size === 0 && typeof window !== 'undefined') {
+    try {
+      const cachedBizId = localStorage.getItem('cineinvoice_active_biz_' + userId);
+      if (cachedBizId) {
+        membershipsMap.set(cachedBizId, {
+          userId,
+          businessId: cachedBizId,
+          email: userEmail || '',
+          name: 'Owner',
+          role: 'owner',
+          joinedAt: new Date().toISOString(),
+        });
+      }
+    } catch {
+      // ignore localStorage errors
+    }
+  }
+
+  const list = Array.from(membershipsMap.values());
+  if (list.length > 0) {
+    try {
+      await updateDoc(doc(db, 'users', userId), {
+        memberships: list,
+        defaultBusinessId: list[0].businessId,
+        onboardingCompleted: true,
+      });
+    } catch {
+      // ignore update errors
+    }
+  }
+
+  return list;
 }
 
 // BUSINESS WORKSPACE
@@ -263,15 +350,19 @@ export async function createBusinessWorkspace(
     await setDoc(doc(db, `businesses/${businessId}/members`, owner.uid), member);
 
     // 3. Seed Default Video Production Services
-    for (const service of DEFAULT_VIDEO_SERVICES) {
-      const sId = 'srv_' + generateSecureToken(12);
-      const serviceDoc: ServiceItem = {
-        ...service,
-        id: sId,
-        businessId,
-        createdAt: now,
-      };
-      await setDoc(doc(db, `businesses/${businessId}/serviceCatalog`, sId), serviceDoc);
+    try {
+      for (const service of DEFAULT_VIDEO_SERVICES) {
+        const sId = 'srv_' + generateSecureToken(12);
+        const serviceDoc: ServiceItem = {
+          ...service,
+          id: sId,
+          businessId,
+          createdAt: now,
+        };
+        await setDoc(doc(db, `businesses/${businessId}/serviceCatalog`, sId), serviceDoc);
+      }
+    } catch (e) {
+      console.warn('Seeding default services non-blocking warning:', e);
     }
 
     // 4. Update user profile default business and memberships
@@ -284,6 +375,15 @@ export async function createBusinessWorkspace(
       createdAt: now,
       updatedAt: now,
     });
+
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem('cineinvoice_active_biz_' + owner.uid, businessId);
+        localStorage.removeItem('cineinvoice_wizard_draft_' + owner.uid);
+      } catch {
+        // ignore storage errors
+      }
+    }
 
     return business;
   } catch (error) {
@@ -526,16 +626,100 @@ export async function deleteService(businessId: string, serviceId: string): Prom
   }
 }
 
-// INVOICES
+// INVOICES PERSISTENCE & RETRIEVAL
 export async function getInvoices(businessId: string): Promise<Invoice[]> {
   const path = `businesses/${businessId}/invoices`;
   try {
     const q = query(collection(db, path), orderBy('createdAt', 'desc'));
     const snap = await getDocs(q);
-    return snap.docs.map((d) => d.data() as Invoice);
+    const invoices = snap.docs.map((d) => d.data() as Invoice);
+    // Cache to localStorage for fast access & offline backup
+    if (typeof window !== 'undefined') {
+      try {
+        localStorage.setItem(`cineinvoice_invoices_${businessId}`, JSON.stringify(invoices));
+      } catch {
+        // ignore quota
+      }
+    }
+    return invoices;
   } catch (error) {
+    console.warn('Error fetching invoices from Firestore, checking local backup:', error);
+    // Fallback to local storage cache so user never loses their invoice history
+    if (typeof window !== 'undefined') {
+      try {
+        const cached = localStorage.getItem(`cineinvoice_invoices_${businessId}`);
+        if (cached) {
+          return JSON.parse(cached) as Invoice[];
+        }
+      } catch {
+        // ignore
+      }
+    }
     handleFirestoreError(error, OperationType.LIST, path);
+    return [];
   }
+}
+
+// GET ALL INVOICES CREATED BY USER (ACROSS ALL WORKSPACES)
+export async function getAllUserInvoices(userId: string): Promise<Invoice[]> {
+  const invoiceMap = new Map<string, Invoice>();
+
+  // 1. Try Collection Group query for all invoices created by this user
+  try {
+    const q = query(collectionGroup(db, 'invoices'), where('createdBy', '==', userId));
+    const snap = await getDocs(q);
+    for (const d of snap.docs) {
+      const inv = d.data() as Invoice;
+      if (inv && inv.id) invoiceMap.set(inv.id, inv);
+    }
+  } catch (err) {
+    console.warn('CollectionGroup invoices query notice:', err);
+  }
+
+  // 2. Query invoices across all businesses owned by this user
+  try {
+    const ownedBizs = await getBusinessesByOwner(userId);
+    for (const biz of ownedBizs) {
+      const bizInvs = await getInvoices(biz.id);
+      for (const inv of bizInvs) {
+        if (inv && inv.id) invoiceMap.set(inv.id, inv);
+      }
+    }
+  } catch (err) {
+    console.warn('Owned businesses invoices notice:', err);
+  }
+
+  // 3. Merge with local storage global user cache
+  if (typeof window !== 'undefined') {
+    try {
+      const userCached = localStorage.getItem(`cineinvoice_user_all_invoices_${userId}`);
+      if (userCached) {
+        const list = JSON.parse(userCached) as Invoice[];
+        for (const inv of list) {
+          if (inv && inv.id && !invoiceMap.has(inv.id)) {
+            invoiceMap.set(inv.id, inv);
+          }
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  const all = Array.from(invoiceMap.values());
+  // Sort descending by date
+  all.sort((a, b) => new Date(b.createdAt || b.issueDate).getTime() - new Date(a.createdAt || a.issueDate).getTime());
+
+  // Update user all invoices cache
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(`cineinvoice_user_all_invoices_${userId}`, JSON.stringify(all));
+    } catch {
+      // ignore
+    }
+  }
+
+  return all;
 }
 
 export async function getInvoice(businessId: string, invoiceId: string): Promise<Invoice | null> {
@@ -544,6 +728,15 @@ export async function getInvoice(businessId: string, invoiceId: string): Promise
     const snap = await getDoc(doc(db, path));
     if (snap.exists()) {
       return snap.data() as Invoice;
+    }
+    // Check local cache
+    if (typeof window !== 'undefined') {
+      const cached = localStorage.getItem(`cineinvoice_invoices_${businessId}`);
+      if (cached) {
+        const list = JSON.parse(cached) as Invoice[];
+        const found = list.find((i) => i.id === invoiceId);
+        if (found) return found;
+      }
     }
     return null;
   } catch (error) {
@@ -569,12 +762,46 @@ export async function createInvoice(
   try {
     await setDoc(doc(db, path), invoice);
     // Increment next invoice number
-    await updateDoc(doc(db, `businesses/${businessId}`), {
-      nextInvoiceNumber: (business.nextInvoiceNumber || 1) + 1,
-    });
+    try {
+      await updateDoc(doc(db, `businesses/${businessId}`), {
+        nextInvoiceNumber: (business.nextInvoiceNumber || 1) + 1,
+      });
+    } catch (e) {
+      console.warn('Next invoice number update notice:', e);
+    }
+
+    // Save to local storage caches for fast UI response and data preservation
+    if (typeof window !== 'undefined') {
+      try {
+        const bizKey = `cineinvoice_invoices_${businessId}`;
+        const existing = JSON.parse(localStorage.getItem(bizKey) || '[]');
+        const updated = [invoice, ...existing.filter((i: Invoice) => i.id !== invId)];
+        localStorage.setItem(bizKey, JSON.stringify(updated));
+
+        if (invoice.createdBy) {
+          const userKey = `cineinvoice_user_all_invoices_${invoice.createdBy}`;
+          const userInvs = JSON.parse(localStorage.getItem(userKey) || '[]');
+          localStorage.setItem(userKey, JSON.stringify([invoice, ...userInvs.filter((i: Invoice) => i.id !== invId)]));
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     return invoice;
   } catch (error) {
+    // If write fails, still backup locally so user does not lose invoice
+    if (typeof window !== 'undefined') {
+      try {
+        const bizKey = `cineinvoice_invoices_${businessId}`;
+        const existing = JSON.parse(localStorage.getItem(bizKey) || '[]');
+        localStorage.setItem(bizKey, JSON.stringify([invoice, ...existing]));
+      } catch {
+        // ignore
+      }
+    }
     handleFirestoreError(error, OperationType.CREATE, path);
+    return invoice;
   }
 }
 
@@ -585,6 +812,20 @@ export async function updateInvoice(businessId: string, invoiceId: string, updat
       ...updates,
       updatedAt: new Date().toISOString(),
     });
+
+    // Update local cache
+    if (typeof window !== 'undefined') {
+      try {
+        const bizKey = `cineinvoice_invoices_${businessId}`;
+        const existing = JSON.parse(localStorage.getItem(bizKey) || '[]');
+        const updated = existing.map((i: Invoice) =>
+          i.id === invoiceId ? { ...i, ...updates, updatedAt: new Date().toISOString() } : i
+        );
+        localStorage.setItem(bizKey, JSON.stringify(updated));
+      } catch {
+        // ignore
+      }
+    }
   } catch (error) {
     handleFirestoreError(error, OperationType.UPDATE, path);
   }
@@ -594,6 +835,16 @@ export async function deleteInvoice(businessId: string, invoiceId: string): Prom
   const path = `businesses/${businessId}/invoices/${invoiceId}`;
   try {
     await deleteDoc(doc(db, path));
+    // Remove from local cache
+    if (typeof window !== 'undefined') {
+      try {
+        const bizKey = `cineinvoice_invoices_${businessId}`;
+        const existing = JSON.parse(localStorage.getItem(bizKey) || '[]');
+        localStorage.setItem(bizKey, JSON.stringify(existing.filter((i: Invoice) => i.id !== invoiceId)));
+      } catch {
+        // ignore
+      }
+    }
   } catch (error) {
     handleFirestoreError(error, OperationType.DELETE, path);
   }

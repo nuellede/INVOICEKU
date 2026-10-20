@@ -96,31 +96,48 @@ function MainApp() {
   }
 
   // Authenticated but No Workspace -> Onboarding Wizard
-  if (isOnboardingNeeded || forceNewWorkspaceWizard) {
+  if ((isOnboardingNeeded && !currentBusiness) || forceNewWorkspaceWizard) {
     return (
       <>
-        <OnboardingWizard />
+        <OnboardingWizard
+          onCancel={() => {
+            setForceNewWorkspaceWizard(false);
+            reloadCurrentBusiness();
+          }}
+          onSuccess={() => {
+            setForceNewWorkspaceWizard(false);
+            setActiveTab('invoices');
+          }}
+        />
         <OfflineIndicator />
       </>
     );
   }
 
-  // Missing Business Workspace Fallback
+  // Missing Business Workspace Fallback (Auto-check or quick trigger)
   if (!currentBusiness) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
         <div className="text-center space-y-4 max-w-sm">
-          <Film className="w-12 h-12 text-slate-600 mx-auto" />
-          <h2 className="text-lg font-bold text-white">Tidak Ada Bisnis Aktif</h2>
+          <Film className="w-12 h-12 text-sky-400 mx-auto animate-pulse" />
+          <h2 className="text-lg font-bold text-white">Menyiapkan Dashboard Studio Anda...</h2>
           <p className="text-xs text-slate-400">
-            Anda belum terdaftar dalam bisnis video manapun. Buat workspace baru sekarang.
+            Sedang menyinkronkan data bisnis dan invoice video Anda ke dashboard.
           </p>
-          <button
-            onClick={() => setForceNewWorkspaceWizard(true)}
-            className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition"
-          >
-            Mulai Wizard Bisnis
-          </button>
+          <div className="flex items-center justify-center gap-3 pt-2">
+            <button
+              onClick={() => reloadCurrentBusiness()}
+              className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold border border-slate-700 transition"
+            >
+              Sinkronkan Ulang
+            </button>
+            <button
+              onClick={() => setForceNewWorkspaceWizard(true)}
+              className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold transition shadow-lg shadow-indigo-600/30"
+            >
+              Setup Profil Bisnis
+            </button>
+          </div>
         </div>
       </div>
     );
@@ -164,6 +181,7 @@ function MainApp() {
             {activeTab === 'invoices' && (
               <InvoiceList
                 business={currentBusiness}
+                userId={user.uid}
                 onOpenCreate={() => setShowCreateInvoice(true)}
                 onOpenDetail={(inv) => setSelectedInvoiceForDetail(inv)}
                 onEditInvoice={(inv) => setEditingInvoice(inv)}

@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { createBusinessWorkspace } from '../services/db';
+import { createBusinessWorkspace, updateBusiness } from '../services/db';
 import { WorkspaceType, InvoiceTemplate } from '../types';
 import {
   Film,
@@ -14,14 +14,23 @@ import {
   CreditCard,
   Percent,
   Sparkles,
+  X,
+  Save,
+  LayoutDashboard,
 } from 'lucide-react';
 
-export const OnboardingWizard: React.FC = () => {
-  const { user, refreshWorkspaces } = useAuth();
+interface Props {
+  onCancel?: () => void;
+  onSuccess?: () => void;
+}
+
+export const OnboardingWizard: React.FC<Props> = ({ onCancel, onSuccess }) => {
+  const { user, currentBusiness, refreshWorkspaces } = useAuth();
 
   const [step, setStep] = useState(1);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [draftSavedToast, setDraftSavedToast] = useState(false);
 
   // Form State
   const [type, setType] = useState<WorkspaceType>('freelancer');
@@ -46,6 +55,106 @@ export const OnboardingWizard: React.FC = () => {
 
   // Template Choice
   const [template, setTemplate] = useState<InvoiceTemplate>('creative');
+
+  // Load saved draft or active business data on initial mount
+  useEffect(() => {
+    if (!user) return;
+    try {
+      const saved = localStorage.getItem('cineinvoice_wizard_draft_' + user.uid);
+      if (saved) {
+        const d = JSON.parse(saved);
+        if (d.type) setType(d.type);
+        if (d.name) setName(d.name);
+        if (d.phone) setPhone(d.phone);
+        if (d.address) setAddress(d.address);
+        if (d.website) setWebsite(d.website);
+        if (d.npwp) setNpwp(d.npwp);
+        if (d.logoUrl) setLogoUrl(d.logoUrl);
+        if (d.invoicePrefix) setInvoicePrefix(d.invoicePrefix);
+        if (d.defaultPaymentTermsDays) setDefaultPaymentTermsDays(d.defaultPaymentTermsDays);
+        if (d.ppnEnabled !== undefined) setPpnEnabled(d.ppnEnabled);
+        if (d.ppnRate !== undefined) setPpnRate(d.ppnRate);
+        if (d.bankName) setBankName(d.bankName);
+        if (d.bankAccountNumber) setBankAccountNumber(d.bankAccountNumber);
+        if (d.bankAccountHolder) setBankAccountHolder(d.bankAccountHolder);
+        if (d.defaultNotes) setDefaultNotes(d.defaultNotes);
+        if (d.template) setTemplate(d.template);
+        if (d.step && d.step >= 1 && d.step <= 5) setStep(d.step);
+      } else if (currentBusiness) {
+        // Pre-fill from existing active workspace
+        setType(currentBusiness.type || 'freelancer');
+        setName(currentBusiness.name || '');
+        setPhone(currentBusiness.phone || '');
+        setAddress(currentBusiness.address || '');
+        setWebsite(currentBusiness.website || '');
+        setNpwp(currentBusiness.npwp || '');
+        setLogoUrl(currentBusiness.logoUrl || '');
+        setInvoicePrefix(currentBusiness.invoicePrefix || `INV/${new Date().getFullYear()}/`);
+        setDefaultPaymentTermsDays(currentBusiness.defaultPaymentTermsDays || 14);
+        setPpnEnabled(currentBusiness.ppnEnabled ?? false);
+        setPpnRate(currentBusiness.ppnRate || 11);
+        setBankName(currentBusiness.bankName || 'BCA');
+        setBankAccountNumber(currentBusiness.bankAccountNumber || '');
+        setBankAccountHolder(currentBusiness.bankAccountHolder || '');
+        setDefaultNotes(currentBusiness.defaultNotes || '');
+        setTemplate(currentBusiness.defaultTemplate || 'creative');
+      }
+    } catch (e) {
+      console.warn('Failed to restore wizard draft', e);
+    }
+  }, [user, currentBusiness]);
+
+  // Auto-save draft on every change
+  useEffect(() => {
+    if (!user) return;
+    try {
+      const draft = {
+        step,
+        type,
+        name,
+        phone,
+        address,
+        website,
+        npwp,
+        logoUrl,
+        invoicePrefix,
+        defaultPaymentTermsDays,
+        ppnEnabled,
+        ppnRate,
+        bankName,
+        bankAccountNumber,
+        bankAccountHolder,
+        defaultNotes,
+        template,
+        updatedAt: new Date().toISOString(),
+      };
+      localStorage.setItem('cineinvoice_wizard_draft_' + user.uid, JSON.stringify(draft));
+      setDraftSavedToast(true);
+      const timer = setTimeout(() => setDraftSavedToast(false), 1500);
+      return () => clearTimeout(timer);
+    } catch {
+      // ignore localStorage quota errors
+    }
+  }, [
+    user,
+    step,
+    type,
+    name,
+    phone,
+    address,
+    website,
+    npwp,
+    logoUrl,
+    invoicePrefix,
+    defaultPaymentTermsDays,
+    ppnEnabled,
+    ppnRate,
+    bankName,
+    bankAccountNumber,
+    bankAccountHolder,
+    defaultNotes,
+    template,
+  ]);
 
   if (!user) return null;
 
@@ -77,38 +186,57 @@ export const OnboardingWizard: React.FC = () => {
     setError(null);
     setIsSubmitting(true);
     try {
-      await createBusinessWorkspace(
-        {
-          name: name.trim(),
-          type,
-          email: user.email || '',
-          phone: phone.trim(),
-          address: address.trim(),
-          website: website.trim(),
-          npwp: npwp.trim(),
-          logoUrl: logoUrl.trim(),
-          currency: 'IDR',
-          invoicePrefix: invoicePrefix.trim(),
-          defaultPaymentTermsDays,
-          defaultTemplate: template,
-          ppnEnabled,
-          ppnRate,
-          bankName: bankName.trim(),
-          bankAccountNumber: bankAccountNumber.trim(),
-          bankAccountHolder: bankAccountHolder.trim(),
-          defaultNotes: defaultNotes.trim(),
-        },
-        {
-          uid: user.uid,
-          email: user.email || '',
-          displayName: user.displayName || undefined,
-        }
-      );
+      const businessPayload = {
+        name: name.trim(),
+        type,
+        email: user.email || '',
+        phone: phone.trim(),
+        address: address.trim(),
+        website: website.trim(),
+        npwp: npwp.trim(),
+        logoUrl: logoUrl.trim(),
+        currency: 'IDR',
+        invoicePrefix: invoicePrefix.trim(),
+        defaultPaymentTermsDays,
+        defaultTemplate: template,
+        ppnEnabled,
+        ppnRate,
+        bankName: bankName.trim(),
+        bankAccountNumber: bankAccountNumber.trim(),
+        bankAccountHolder: bankAccountHolder.trim(),
+        defaultNotes: defaultNotes.trim(),
+      };
+
+      if (currentBusiness?.id) {
+        // Update existing business workspace
+        await updateBusiness(currentBusiness.id, businessPayload);
+      } else {
+        // Create new business workspace
+        await createBusinessWorkspace(
+          businessPayload,
+          {
+            uid: user.uid,
+            email: user.email || '',
+            displayName: user.displayName || undefined,
+          }
+        );
+      }
+
+      // Clear draft on successful completion
+      try {
+        localStorage.removeItem('cineinvoice_wizard_draft_' + user.uid);
+      } catch {
+        // ignore
+      }
 
       await refreshWorkspaces();
+
+      if (onSuccess) {
+        onSuccess();
+      }
     } catch (err: unknown) {
       console.error('Failed to finish onboarding:', err);
-      let msg = 'Gagal membuat workspace bisnis.';
+      let msg = 'Gagal menyimpan workspace bisnis.';
       if (err instanceof Error) {
         try {
           const parsed = JSON.parse(err.message);
@@ -122,6 +250,67 @@ export const OnboardingWizard: React.FC = () => {
     }
   };
 
+  const handleSaveAndGoToDashboard = async () => {
+    setError(null);
+    setIsSubmitting(true);
+    try {
+      const finalName = name.trim() || (user?.displayName ? `${user.displayName} Studio` : (user?.email ? `${user.email.split('@')[0]} Studio` : 'Cine Studio'));
+      const businessPayload = {
+        name: finalName,
+        type: type || 'freelancer',
+        email: user?.email || '',
+        phone: phone.trim() || '0812000000',
+        address: address.trim(),
+        website: website.trim(),
+        npwp: npwp.trim(),
+        logoUrl: logoUrl.trim(),
+        currency: 'IDR',
+        invoicePrefix: invoicePrefix.trim() || `INV/${new Date().getFullYear()}/`,
+        defaultPaymentTermsDays,
+        defaultTemplate: template,
+        ppnEnabled,
+        ppnRate,
+        bankName: bankName.trim(),
+        bankAccountNumber: bankAccountNumber.trim(),
+        bankAccountHolder: bankAccountHolder.trim(),
+        defaultNotes: defaultNotes.trim(),
+      };
+
+      if (currentBusiness?.id) {
+        await updateBusiness(currentBusiness.id, businessPayload);
+      } else if (user) {
+        await createBusinessWorkspace(
+          businessPayload,
+          {
+            uid: user.uid,
+            email: user.email || '',
+            displayName: user.displayName || undefined,
+          }
+        );
+      }
+
+      try {
+        localStorage.removeItem('cineinvoice_wizard_draft_' + user?.uid);
+      } catch {
+        // ignore
+      }
+
+      await refreshWorkspaces();
+
+      if (onSuccess) {
+        onSuccess();
+      } else if (onCancel) {
+        onCancel();
+      }
+    } catch (err) {
+      console.error('Failed to save and enter dashboard:', err);
+      if (onSuccess) onSuccess();
+      else if (onCancel) onCancel();
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col items-center justify-center p-4 selection:bg-indigo-500 selection:text-white">
       {/* Background glow */}
@@ -129,7 +318,17 @@ export const OnboardingWizard: React.FC = () => {
 
       <div className="w-full max-w-2xl relative z-10 my-8">
         {/* Brand Header */}
-        <div className="text-center mb-8">
+        <div className="text-center mb-6 relative">
+          {onCancel && (
+            <button
+              onClick={onCancel}
+              className="absolute right-0 top-0 p-2 text-slate-400 hover:text-white rounded-xl hover:bg-slate-900 transition"
+              title="Tutup & Kembali ke Dashboard"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          )}
+
           <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-300 text-xs font-semibold mb-3">
             <Sparkles className="w-3.5 h-3.5 text-sky-400" />
             <span>Wizard Setup Bisnis Baru</span>
@@ -140,14 +339,62 @@ export const OnboardingWizard: React.FC = () => {
           </p>
         </div>
 
+        {/* Existing Business Notice Banner */}
+        {currentBusiness && (
+          <div className="mb-6 p-4 rounded-2xl bg-indigo-950/70 border border-indigo-500/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xl backdrop-blur-sm">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center shrink-0">
+                <LayoutDashboard className="w-4 h-4" />
+              </div>
+              <div>
+                <p className="text-xs font-bold text-white">
+                  Workspace Aktif Ditemukan: <span className="text-sky-300">{currentBusiness.name}</span>
+                </p>
+                <p className="text-[11px] text-slate-400">
+                  Data bisnis sudah tersimpan di database. Anda bisa langsung masuk ke dashboard kapan saja.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => {
+                if (onSuccess) onSuccess();
+                else if (onCancel) onCancel();
+                else window.location.reload();
+              }}
+              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold shadow-md shadow-indigo-600/30 transition flex items-center justify-center gap-1.5 shrink-0 active:scale-95"
+            >
+              <span>Buka Dashboard</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
+        {/* Auto-save Status Badge & Direct Dashboard Exit */}
+        <div className="flex items-center justify-between mb-4 px-1 gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 text-[11px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full">
+            <Check className="w-3 h-3" />
+            <span>{draftSavedToast ? 'Tersimpan otomatis...' : 'Draf data otomatis tersimpan'}</span>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleSaveAndGoToDashboard}
+            disabled={isSubmitting}
+            className="flex items-center gap-1.5 text-xs text-indigo-300 hover:text-white font-semibold px-3 py-1.5 rounded-xl bg-indigo-950/80 border border-indigo-500/30 hover:bg-indigo-900 transition shadow-sm"
+          >
+            <LayoutDashboard className="w-3.5 h-3.5 text-sky-400" />
+            <span>Simpan Data & Buka Dashboard</span>
+          </button>
+        </div>
+
         {/* Stepper Progress Bar */}
-        <div className="mb-8">
+        <div className="mb-6">
           <div className="flex items-center justify-between text-xs font-semibold text-slate-400 mb-2 px-1">
-            <span className={step >= 1 ? 'text-indigo-400' : ''}>1. Jenis Akun</span>
-            <span className={step >= 2 ? 'text-indigo-400' : ''}>2. Profil Studio</span>
-            <span className={step >= 3 ? 'text-indigo-400' : ''}>3. Pembayaran</span>
-            <span className={step >= 4 ? 'text-indigo-400' : ''}>4. Template PDF</span>
-            <span className={step >= 5 ? 'text-indigo-400' : ''}>5. Selesai</span>
+            <span className={step >= 1 ? 'text-indigo-400 font-bold' : ''}>1. Jenis Akun</span>
+            <span className={step >= 2 ? 'text-indigo-400 font-bold' : ''}>2. Profil Studio</span>
+            <span className={step >= 3 ? 'text-indigo-400 font-bold' : ''}>3. Pembayaran</span>
+            <span className={step >= 4 ? 'text-indigo-400 font-bold' : ''}>4. Template PDF</span>
+            <span className={step >= 5 ? 'text-indigo-400 font-bold' : ''}>5. Selesai</span>
           </div>
           <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden border border-slate-800">
             <div
@@ -158,349 +405,343 @@ export const OnboardingWizard: React.FC = () => {
         </div>
 
         {/* Wizard Card Body */}
-        <div className="rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl p-6 sm:p-8 backdrop-blur-xl">
+        <div className="rounded-3xl bg-slate-900 border border-slate-800 shadow-2xl p-6 sm:p-8">
           {error && (
-            <div className="mb-6 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs">
+            <div className="mb-6 p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-400 text-xs">
               {error}
             </div>
           )}
 
-          {/* STEP 1: Choose Account Type */}
+          {/* STEP 1: CHOOSE WORKSPACE TYPE */}
           {step === 1 && (
-            <div className="space-y-4">
-              <h3 className="text-base font-bold text-white">Pilih Jenis Akun Video Production Anda</h3>
-              <p className="text-xs text-slate-400">
-                Pilih struktur yang sesuai dengan cara kerja Anda. Anda dapat mengundang tim nanti jika memilih UMKM.
-              </p>
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-lg font-bold text-white">Pilih Jenis Akun Video Production Anda</h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Pilih struktur yang sesuai dengan cara kerja Anda. Anda dapat mengundang tim nanti jika memilih UMKM.
+                </p>
+              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                {/* Freelancer Card */}
                 <div
                   onClick={() => setType('freelancer')}
-                  className={`cursor-pointer p-5 rounded-2xl border-2 transition ${
+                  className={`cursor-pointer rounded-2xl p-5 border transition relative ${
                     type === 'freelancer'
-                      ? 'border-indigo-500 bg-indigo-500/10 shadow-lg shadow-indigo-500/10'
-                      : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'
+                      ? 'bg-indigo-600/10 border-indigo-500 shadow-lg shadow-indigo-500/10'
+                      : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
                   }`}
                 >
-                  <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center mb-3">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-500/20 text-indigo-400 flex items-center justify-center mb-4">
                     <User className="w-5 h-5" />
                   </div>
-                  <h4 className="text-sm font-bold text-white flex items-center justify-between">
-                    Freelancer Mandiri
-                    {type === 'freelancer' && <Check className="w-4 h-4 text-indigo-400" />}
-                  </h4>
-                  <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                  <h4 className="text-sm font-bold text-white">Freelancer Mandiri</h4>
+                  <p className="text-xs text-slate-400 mt-1">
                     Untuk videografer, editor video, drone pilot, colorist, atau sound designer yang mengelola klien dan tagihan mandiri.
                   </p>
+                  {type === 'freelancer' && (
+                    <CheckCircle2 className="w-5 h-5 text-indigo-400 absolute top-4 right-4" />
+                  )}
                 </div>
 
+                {/* UMKM / Production House Card */}
                 <div
                   onClick={() => setType('umkm')}
-                  className={`cursor-pointer p-5 rounded-2xl border-2 transition ${
+                  className={`cursor-pointer rounded-2xl p-5 border transition relative ${
                     type === 'umkm'
-                      ? 'border-indigo-500 bg-indigo-500/10 shadow-lg shadow-indigo-500/10'
-                      : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'
+                      ? 'bg-indigo-600/10 border-indigo-500 shadow-lg shadow-indigo-500/10'
+                      : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
                   }`}
                 >
-                  <div className="w-10 h-10 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center mb-3">
+                  <div className="w-10 h-10 rounded-xl bg-sky-500/20 text-sky-400 flex items-center justify-center mb-4">
                     <Building className="w-5 h-5" />
                   </div>
-                  <h4 className="text-sm font-bold text-white flex items-center justify-between">
-                    UMKM / Production House
-                    {type === 'umkm' && <Check className="w-4 h-4 text-sky-400" />}
-                  </h4>
-                  <p className="text-xs text-slate-400 mt-1 leading-relaxed">
+                  <h4 className="text-sm font-bold text-white">UMKM / Production House</h4>
+                  <p className="text-xs text-slate-400 mt-1">
                     Untuk studio kreatif, rental alat, agensi video, atau rumah produksi dengan banyak anggota tim (Owner, Admin, Finance).
                   </p>
+                  {type === 'umkm' && (
+                    <CheckCircle2 className="w-5 h-5 text-sky-400 absolute top-4 right-4" />
+                  )}
                 </div>
               </div>
             </div>
           )}
 
-          {/* STEP 2: Business Profile */}
+          {/* STEP 2: STUDIO PROFILE */}
           {step === 2 && (
             <div className="space-y-4">
-              <h3 className="text-base font-bold text-white">Profil & Kontak Bisnis</h3>
-              <p className="text-xs text-slate-400">
-                Informasi ini akan dicetak di header invoice dan template pesan WhatsApp ke klien.
-              </p>
+              <div>
+                <h3 className="text-lg font-bold text-white">Profil Bisnis Video Production</h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Informasi ini akan tercetak sebagai kepala surat (header) pada invoice resmi Anda. Data ini otomatis tersimpan.
+                </p>
+              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
-                <div className="sm:col-span-2">
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Nama Bisnis / Brand / Studio <span className="text-rose-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                  placeholder="Contoh: CineNova Visuals Studio"
+                  className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:outline-none text-xs text-white"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
                   <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    Nama Bisnis / Studio / Brand <span className="text-rose-400">*</span>
+                    No. WhatsApp / Telepon <span className="text-rose-400">*</span>
                   </label>
                   <input
                     type="text"
                     required
-                    value={name}
-                    onChange={(e) => setName(e.target.value)}
-                    placeholder="Contoh: MotionFrame Films"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:outline-none text-xs text-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">
-                    No. Telepon / WhatsApp <span className="text-rose-400">*</span>
-                  </label>
-                  <input
-                    type="tel"
-                    required
                     value={phone}
                     onChange={(e) => setPhone(e.target.value)}
-                    placeholder="Contoh: 081234567890"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:outline-none text-xs text-white"
+                    placeholder="081234567890"
+                    className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:outline-none text-xs text-white"
                   />
                 </div>
-
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Website (Opsional)</label>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Website / Portofolio (Opsional)
+                  </label>
                   <input
                     type="text"
                     value={website}
                     onChange={(e) => setWebsite(e.target.value)}
-                    placeholder="Contoh: https://motionframe.id"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:outline-none text-xs text-white"
+                    placeholder="https://cinenova.id"
+                    className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:outline-none text-xs text-white"
                   />
                 </div>
+              </div>
 
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Alamat Studio / Kantor</label>
-                  <textarea
-                    rows={2}
-                    value={address}
-                    onChange={(e) => setAddress(e.target.value)}
-                    placeholder="Contoh: Jl. Kemang Raya No. 12, Jakarta Selatan"
-                    className="w-full px-3.5 py-2 rounded-xl bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:outline-none text-xs text-white resize-none"
-                  />
-                </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-300 mb-1">
+                  Alamat Lengkap Studio / Operasional
+                </label>
+                <textarea
+                  rows={2}
+                  value={address}
+                  onChange={(e) => setAddress(e.target.value)}
+                  placeholder="Jl. Kreatif No. 8, Jakarta Selatan, DKI Jakarta"
+                  className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:outline-none text-xs text-white resize-none"
+                />
+              </div>
 
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">NPWP (Opsional)</label>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    NPWP Badan / Pribadi (Opsional)
+                  </label>
                   <input
                     type="text"
                     value={npwp}
                     onChange={(e) => setNpwp(e.target.value)}
-                    placeholder="Contoh: 01.234.567.8-901.000"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:outline-none text-xs text-white"
+                    placeholder="00.000.000.0-000.000"
+                    className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:outline-none text-xs text-white"
                   />
                 </div>
-
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">URL Logo (Opsional)</label>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    URL Logo Studio (Opsional)
+                  </label>
                   <input
                     type="text"
                     value={logoUrl}
                     onChange={(e) => setLogoUrl(e.target.value)}
-                    placeholder="Contoh: https://.../logo.png"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:outline-none text-xs text-white"
+                    placeholder="https://.../logo.png"
+                    className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:outline-none text-xs text-white"
                   />
                 </div>
               </div>
             </div>
           )}
 
-          {/* STEP 3: Invoice & Payment Preferences */}
+          {/* STEP 3: INVOICE & PAYMENT PREFERENCES */}
           {step === 3 && (
             <div className="space-y-4">
-              <h3 className="text-base font-bold text-white">Preferensi Penagihan & Rekening Bank</h3>
-              <p className="text-xs text-slate-400">
-                Atur format nomor invoice, jatuh tempo standar, serta rincian rekening pembayaran klien.
-              </p>
+              <div>
+                <h3 className="text-lg font-bold text-white">Preferensi Penomoran & Rekening Pembayaran</h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Tentukan nomor rekening tujuan transfer dan format nomor invoice otomatis Anda.
+                </p>
+              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-1">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Format Penomoran Invoice</label>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Format Prefix Nomor Invoice
+                  </label>
                   <input
                     type="text"
                     value={invoicePrefix}
                     onChange={(e) => setInvoicePrefix(e.target.value)}
-                    placeholder="Contoh: INV/2026/"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:outline-none text-xs text-white"
+                    placeholder="INV/2026/"
+                    className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:outline-none text-xs text-white font-mono"
                   />
-                  <span className="text-[10px] text-slate-500 mt-1 block">Nomor berikutnya otomatis: INV/2026/001</span>
                 </div>
-
                 <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Jatuh Tempo Default (Hari)</label>
+                  <label className="block text-xs font-semibold text-slate-300 mb-1">
+                    Standar Jatuh Tempo (Hari)
+                  </label>
                   <input
                     type="number"
-                    min={1}
-                    max={90}
                     value={defaultPaymentTermsDays}
                     onChange={(e) => setDefaultPaymentTermsDays(Number(e.target.value))}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:outline-none text-xs text-white"
+                    min={1}
+                    max={90}
+                    className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:outline-none text-xs text-white"
                   />
                 </div>
+              </div>
 
-                {/* PPN Switch */}
-                <div className="sm:col-span-2 p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+              {/* Bank Account */}
+              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 space-y-3">
+                <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                  <CreditCard className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Rekening Bank Penerima Transfer</span>
+                </span>
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   <div>
-                    <span className="text-xs font-bold text-white flex items-center gap-1.5">
-                      <Percent className="w-3.5 h-3.5 text-sky-400" /> Aktifkan Pajak PPN Standar
-                    </span>
-                    <span className="text-[11px] text-slate-400 block mt-0.5">
-                      Dapat diaktifkan/dinonaktifkan per invoice saat pembuatan.
-                    </span>
+                    <label className="block text-[11px] text-slate-400 mb-1">Nama Bank</label>
+                    <input
+                      type="text"
+                      value={bankName}
+                      onChange={(e) => setBankName(e.target.value)}
+                      placeholder="BCA / Mandiri / BNI"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 focus:border-indigo-500 text-xs text-white"
+                    />
                   </div>
-                  <div className="flex items-center gap-3">
-                    {ppnEnabled && (
-                      <select
-                        value={ppnRate}
-                        onChange={(e) => setPpnRate(Number(e.target.value))}
-                        className="px-2 py-1 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white"
-                      >
-                        <option value={11}>11%</option>
-                        <option value={12}>12%</option>
-                      </select>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => setPpnEnabled(!ppnEnabled)}
-                      className={`w-11 h-6 rounded-full transition p-1 flex items-center ${
-                        ppnEnabled ? 'bg-indigo-600 justify-end' : 'bg-slate-800 justify-start'
-                      }`}
+                  <div>
+                    <label className="block text-[11px] text-slate-400 mb-1">Nomor Rekening</label>
+                    <input
+                      type="text"
+                      value={bankAccountNumber}
+                      onChange={(e) => setBankAccountNumber(e.target.value)}
+                      placeholder="1234567890"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 focus:border-indigo-500 text-xs text-white font-mono"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] text-slate-400 mb-1">Atas Nama (Pemilik)</label>
+                    <input
+                      type="text"
+                      value={bankAccountHolder}
+                      onChange={(e) => setBankAccountHolder(e.target.value)}
+                      placeholder="Nama Pemilik Rekening"
+                      className="w-full px-3 py-2 rounded-xl bg-slate-900 border border-slate-800 focus:border-indigo-500 text-xs text-white"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* PPN Option */}
+              <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 flex items-center justify-between">
+                <div>
+                  <span className="text-xs font-semibold text-white block">Aktifkan PPN Otomatis</span>
+                  <span className="text-[11px] text-slate-400">
+                    Otomatis tambahkan tarif PPN (misal 11% atau 12%) pada setiap pembuatan invoice baru.
+                  </span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="ppnToggle"
+                    checked={ppnEnabled}
+                    onChange={(e) => setPpnEnabled(e.target.checked)}
+                    className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 border-slate-700 bg-slate-900"
+                  />
+                  {ppnEnabled && (
+                    <select
+                      value={ppnRate}
+                      onChange={(e) => setPpnRate(Number(e.target.value))}
+                      className="px-2 py-1 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white"
                     >
-                      <div className="w-4 h-4 rounded-full bg-white shadow-sm" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* Bank Account */}
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Nama Bank</label>
-                  <select
-                    value={bankName}
-                    onChange={(e) => setBankName(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:outline-none text-xs text-white"
-                  >
-                    <option value="BCA">BCA (Bank Central Asia)</option>
-                    <option value="Mandiri">Bank Mandiri</option>
-                    <option value="BRI">BRI (Bank Rakyat Indonesia)</option>
-                    <option value="BNI">BNI (Bank Negara Indonesia)</option>
-                    <option value="BSI">BSI (Bank Syariah Indonesia)</option>
-                    <option value="CIMB">CIMB Niaga</option>
-                    <option value="Permata">Bank Permata</option>
-                    <option value="Jago">Bank Jago</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Nomor Rekening</label>
-                  <input
-                    type="text"
-                    value={bankAccountNumber}
-                    onChange={(e) => setBankAccountNumber(e.target.value)}
-                    placeholder="Contoh: 1234567890"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:outline-none text-xs text-white"
-                  />
-                </div>
-
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-semibold text-slate-300 mb-1">Nama Pemilik Rekening (A.N.)</label>
-                  <input
-                    type="text"
-                    value={bankAccountHolder}
-                    onChange={(e) => setBankAccountHolder(e.target.value)}
-                    placeholder="Contoh: PT Lumina Kreasi Studio / Dimas Pratama"
-                    className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-800 focus:border-indigo-500 focus:outline-none text-xs text-white"
-                  />
+                      <option value={11}>11%</option>
+                      <option value={12}>12%</option>
+                    </select>
+                  )}
                 </div>
               </div>
             </div>
           )}
 
-          {/* STEP 4: Choose Template */}
+          {/* STEP 4: TEMPLATE PDF SELECTION */}
           {step === 4 && (
             <div className="space-y-4">
-              <h3 className="text-base font-bold text-white">Pilih Template Desain Invoice</h3>
-              <p className="text-xs text-slate-400">
-                Pilih gaya tata letak default untuk cetak PDF dan invoice sharing. Anda dapat mengubahnya kapan saja.
-              </p>
+              <div>
+                <h3 className="text-lg font-bold text-white">Pilih Template Desain Invoice Anda</h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Pilih gaya visual invoice yang mewakili citra profesional studio video Anda.
+                </p>
+              </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 pt-2">
-                <div
-                  onClick={() => setTemplate('corporate')}
-                  className={`cursor-pointer p-4 rounded-2xl border-2 transition ${
-                    template === 'corporate'
-                      ? 'border-indigo-500 bg-indigo-500/10'
-                      : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'
-                  }`}
-                >
-                  <div className="h-24 rounded-xl bg-slate-900 border border-slate-800 p-2 flex flex-col justify-between mb-3">
-                    <div className="h-3 w-16 bg-blue-600 rounded" />
-                    <div className="space-y-1">
-                      <div className="h-1.5 w-full bg-slate-700 rounded" />
-                      <div className="h-1.5 w-3/4 bg-slate-800 rounded" />
-                    </div>
-                    <div className="h-3 w-12 bg-blue-700 rounded self-end" />
-                  </div>
-                  <h4 className="text-xs font-bold text-white flex items-center justify-between">
-                    Corporate Formal
-                    {template === 'corporate' && <Check className="w-3.5 h-3.5 text-indigo-400" />}
-                  </h4>
-                  <p className="text-[10px] text-slate-400 mt-1">Struktur formal untuk instansi BUMN, korporasi & tender.</p>
-                </div>
-
-                <div
-                  onClick={() => setTemplate('minimalist')}
-                  className={`cursor-pointer p-4 rounded-2xl border-2 transition ${
-                    template === 'minimalist'
-                      ? 'border-indigo-500 bg-indigo-500/10'
-                      : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'
-                  }`}
-                >
-                  <div className="h-24 rounded-xl bg-slate-900 border border-slate-800 p-2 flex flex-col justify-between mb-3">
-                    <div className="h-3 w-14 bg-slate-400 rounded" />
-                    <div className="space-y-1">
-                      <div className="h-1.5 w-full bg-slate-800 rounded" />
-                      <div className="h-1.5 w-2/3 bg-slate-800 rounded" />
-                    </div>
-                    <div className="h-3 w-10 bg-slate-300 rounded self-end" />
-                  </div>
-                  <h4 className="text-xs font-bold text-white flex items-center justify-between">
-                    Minimalist Pro
-                    {template === 'minimalist' && <Check className="w-3.5 h-3.5 text-indigo-400" />}
-                  </h4>
-                  <p className="text-[10px] text-slate-400 mt-1">Gaya monokrom rapi, bersih, dan modern.</p>
-                </div>
-
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* Creative Studio */}
                 <div
                   onClick={() => setTemplate('creative')}
-                  className={`cursor-pointer p-4 rounded-2xl border-2 transition ${
+                  className={`cursor-pointer rounded-2xl p-4 border transition ${
                     template === 'creative'
-                      ? 'border-indigo-500 bg-indigo-500/10'
-                      : 'border-slate-800 bg-slate-950/60 hover:border-slate-700'
+                      ? 'bg-indigo-600/15 border-indigo-500 shadow-md'
+                      : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
                   }`}
                 >
-                  <div className="h-24 rounded-xl bg-slate-900 border border-slate-800 p-2 flex flex-col justify-between mb-3">
-                    <div className="h-3 w-14 bg-gradient-to-r from-indigo-500 to-sky-400 rounded" />
-                    <div className="space-y-1">
-                      <div className="h-1.5 w-full bg-slate-700 rounded" />
-                      <div className="h-1.5 w-4/5 bg-slate-800 rounded" />
-                    </div>
-                    <div className="h-3 w-14 bg-emerald-500 rounded self-end" />
-                  </div>
-                  <h4 className="text-xs font-bold text-white flex items-center justify-between">
-                    Creative Studio
-                    {template === 'creative' && <Check className="w-3.5 h-3.5 text-indigo-400" />}
-                  </h4>
-                  <p className="text-[10px] text-slate-400 mt-1">Aksen sinematik, bold, dan menonjolkan identitas visual video.</p>
+                  <div className="h-2 w-full rounded bg-indigo-500 mb-3" />
+                  <h4 className="text-xs font-bold text-white">Creative Studio</h4>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Warna indigo modern, badge status rounded, cocok untuk agensi video dan freelancer kreatif.
+                  </p>
+                </div>
+
+                {/* Corporate Formal */}
+                <div
+                  onClick={() => setTemplate('corporate')}
+                  className={`cursor-pointer rounded-2xl p-4 border transition ${
+                    template === 'corporate'
+                      ? 'bg-slate-800/60 border-slate-400 shadow-md'
+                      : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="h-2 w-full rounded bg-slate-900 mb-3" />
+                  <h4 className="text-xs font-bold text-white">Corporate Formal</h4>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Garis border tegas navy slate dengan kolom stempel resmi dan tanda tangan basah.
+                  </p>
+                </div>
+
+                {/* Minimalist Professional */}
+                <div
+                  onClick={() => setTemplate('minimalist')}
+                  className={`cursor-pointer rounded-2xl p-4 border transition ${
+                    template === 'minimalist'
+                      ? 'bg-sky-500/10 border-sky-500 shadow-md'
+                      : 'bg-slate-950/60 border-slate-800 hover:border-slate-700'
+                  }`}
+                >
+                  <div className="h-2 w-full rounded bg-slate-600 mb-3" />
+                  <h4 className="text-xs font-bold text-white">Minimalist Studio</h4>
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    Desain clean monokrom, tipografi lapang, sangat elegan untuk dokumentasi video sinematik.
+                  </p>
                 </div>
               </div>
             </div>
           )}
 
-          {/* STEP 5: Review & Finish */}
+          {/* STEP 5: FINISH & CONFIRMATION */}
           {step === 5 && (
-            <div className="space-y-4 text-center py-4">
-              <div className="w-16 h-16 rounded-3xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 flex items-center justify-center mx-auto mb-2">
+            <div className="text-center py-4 space-y-4">
+              <div className="w-14 h-14 rounded-3xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto shadow-xl shadow-emerald-500/10">
                 <CheckCircle2 className="w-8 h-8" />
               </div>
               <h3 className="text-xl font-black text-white">Workspace Siap Digunakan!</h3>
               <p className="text-xs text-slate-400 max-w-md mx-auto">
-                Bisnis <strong className="text-white">{name}</strong> ({type === 'freelancer' ? 'Freelancer' : 'UMKM'}) telah dikonfigurasi lengkap dengan 10 katalog jasa video bawaan (shooting, drone, lighting, editing, color grading).
+                Bisnis <strong className="text-white">{name}</strong> ({type === 'freelancer' ? 'Freelancer' : 'UMKM'}) telah dikonfigurasi lengkap dengan katalog jasa video bawaan (shooting, drone, lighting, editing, color grading).
               </p>
 
               <div className="p-4 rounded-2xl bg-slate-950 border border-slate-800 text-left text-xs space-y-2 mt-4 max-w-md mx-auto">
@@ -537,14 +778,27 @@ export const OnboardingWizard: React.FC = () => {
             )}
 
             {step < 5 ? (
-              <button
-                type="button"
-                onClick={handleNext}
-                className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-lg shadow-indigo-600/30 transition active:scale-95 ml-auto"
-              >
-                <span>Lanjutkan</span>
-                <ArrowRight className="w-3.5 h-3.5" />
-              </button>
+              <div className="flex items-center gap-2.5 ml-auto flex-wrap justify-end">
+                <button
+                  type="button"
+                  onClick={handleSaveAndGoToDashboard}
+                  disabled={isSubmitting}
+                  className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold border border-slate-700 transition"
+                  title="Simpan data yang sudah diisi dan langsung buka dashboard invoice"
+                >
+                  <Save className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Simpan & Buka Dashboard</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleNext}
+                  disabled={isSubmitting}
+                  className="flex items-center gap-1.5 px-6 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-lg shadow-indigo-600/30 transition active:scale-95"
+                >
+                  <span>Lanjutkan</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
+              </div>
             ) : (
               <button
                 type="button"

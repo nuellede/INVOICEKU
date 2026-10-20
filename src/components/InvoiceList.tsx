@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Invoice, Business } from '../types';
-import { getInvoices, deleteInvoice } from '../services/db';
+import { getInvoices, getAllUserInvoices, deleteInvoice } from '../services/db';
 import {
   formatIDR,
   formatIndonesianDate,
@@ -24,10 +24,13 @@ import {
   Clock,
   Send,
   Building,
+  Database,
+  Layers,
 } from 'lucide-react';
 
 interface Props {
   business: Business;
+  userId?: string;
   onOpenCreate: () => void;
   onOpenDetail: (invoice: Invoice) => void;
   onEditInvoice: (invoice: Invoice) => void;
@@ -35,6 +38,7 @@ interface Props {
 
 export const InvoiceList: React.FC<Props> = ({
   business,
+  userId,
   onOpenCreate,
   onOpenDetail,
   onEditInvoice,
@@ -43,12 +47,26 @@ export const InvoiceList: React.FC<Props> = ({
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
+  const [viewScope, setViewScope] = useState<'workspace' | 'all'>('workspace');
 
   const fetchInvoices = async () => {
     setLoading(true);
     try {
-      const data = await getInvoices(business.id);
-      setInvoices(data);
+      if (viewScope === 'all' && userId) {
+        const data = await getAllUserInvoices(userId);
+        setInvoices(data);
+      } else {
+        const data = await getInvoices(business.id);
+        if (data.length === 0 && userId) {
+          const allUserInvs = await getAllUserInvoices(userId);
+          if (allUserInvs.length > 0) {
+            setViewScope('all');
+            setInvoices(allUserInvs);
+            return;
+          }
+        }
+        setInvoices(data);
+      }
     } catch (e) {
       console.error('Failed to load invoices', e);
     } finally {
@@ -58,7 +76,7 @@ export const InvoiceList: React.FC<Props> = ({
 
   useEffect(() => {
     fetchInvoices();
-  }, [business.id]);
+  }, [business.id, viewScope, userId]);
 
   const handleDelete = async (invoice: Invoice, e: React.MouseEvent) => {
     e.stopPropagation();
@@ -175,6 +193,43 @@ export const InvoiceList: React.FC<Props> = ({
           <Plus className="w-4 h-4" />
           <span>Buat Invoice Baru</span>
         </button>
+      </div>
+
+      {/* Scope Selector & Database Status */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 rounded-2xl bg-slate-900/60 border border-slate-800">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button
+            type="button"
+            onClick={() => setViewScope('workspace')}
+            className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
+              viewScope === 'workspace'
+                ? 'bg-indigo-600 text-white shadow-md'
+                : 'text-slate-400 hover:text-white hover:bg-slate-800'
+            }`}
+          >
+            <Building className="w-3.5 h-3.5" />
+            <span>Workspace: {business.name}</span>
+          </button>
+          {userId && (
+            <button
+              type="button"
+              onClick={() => setViewScope('all')}
+              className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 transition ${
+                viewScope === 'all'
+                  ? 'bg-indigo-600 text-white shadow-md'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              }`}
+            >
+              <Layers className="w-3.5 h-3.5" />
+              <span>Semua Invoice Saya</span>
+            </button>
+          )}
+        </div>
+
+        <div className="flex items-center gap-1.5 text-[11px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1 rounded-full w-fit">
+          <Database className="w-3.5 h-3.5" />
+          <span>{invoices.length} Dokumen Invoice Tersimpan</span>
+        </div>
       </div>
 
       {/* Filter Tabs & Search Bar */}

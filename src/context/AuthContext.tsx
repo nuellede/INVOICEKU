@@ -16,6 +16,8 @@ import {
   getUserProfile,
   saveUserProfile,
   getUserMemberships,
+  getBusinessesByOwner,
+  getBusinessesByEmail,
   getBusiness,
   createBusinessWorkspace,
   getPendingInvitationsForEmail,
@@ -91,34 +93,139 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      // 3. Get memberships
-      const memberships = await getUserMemberships(firebaseUser.uid);
+      // 3. Multi-tier business discovery
+      const memberships = await getUserMemberships(firebaseUser.uid, firebaseUser.email || undefined);
       setUserMemberships(memberships);
 
-      if (memberships.length === 0) {
-        // No workspace yet -> trigger onboarding wizard
-        setIsOnboardingNeeded(true);
-        setCurrentBusiness(null);
-        setCurrentRole(null);
-      } else {
-        setIsOnboardingNeeded(false);
-        // Find default or first business
-        const preferredId = prof.defaultBusinessId || memberships[0].businessId;
-        const activeMembership = memberships.find((m) => m.businessId === preferredId) || memberships[0];
-        const biz = await getBusiness(activeMembership.businessId);
+      let resolvedBusiness: Business | null = null;
+      let resolvedRole: MemberRole = 'owner';
 
-        if (biz) {
-          setCurrentBusiness(biz);
-          setCurrentRole(activeMembership.role);
-        } else {
-          // If preferred not found, fallback to first valid
-          const firstBiz = await getBusiness(memberships[0].businessId);
-          setCurrentBusiness(firstBiz);
-          setCurrentRole(memberships[0].role);
+      if (memberships.length > 0) {
+        // Preferred ID from profile or first membership
+        const preferredId = prof.defaultBusinessId || memberships[0].businessId;
+        resolvedBusiness = await getBusiness(preferredId);
+        const mem = memberships.find((m) => m.businessId === preferredId) || memberships[0];
+        if (mem) resolvedRole = mem.role;
+
+        if (!resolvedBusiness) {
+          resolvedBusiness = await getBusiness(memberships[0].businessId);
         }
+      }
+
+      // 4. If still not resolved, query by ownerId
+      if (!resolvedBusiness) {
+        const owned = await getBusinessesByOwner(firebaseUser.uid);
+        if (owned.length > 0) {
+          resolvedBusiness = owned[0];
+          resolvedRole = 'owner';
+        }
+      }
+
+      // 5. If still not resolved, query by ownerEmail
+      if (!resolvedBusiness && firebaseUser.email) {
+        const emailBizs = await getBusinessesByEmail(firebaseUser.email);
+        if (emailBizs.length > 0) {
+          resolvedBusiness = emailBizs[0];
+          resolvedRole = 'owner';
+        }
+      }
+
+      // 6. If STILL no business found in Firestore:
+      // AUTO-INITIALIZE / PROVISION WORKSPACE SO USER IMMEDIATELY GOES TO DASHBOARD!
+      // This honors user request: "ketika sudah login tolong tampilkan dashboard nya jangan tampilkan ini terus"
+      if (!resolvedBusiness) {
+        let studioName = '';
+        let studioPhone = '';
+        let studioAddress = '';
+        let studioType: WorkspaceType = 'freelancer';
+        let studioBank = 'BCA';
+        let studioAcc = '';
+        let studioHolder = '';
+
+        // Check if there was any draft previously typed in the onboarding wizard
+        if (typeof window !== 'undefined') {
+          try {
+            const draftStr = localStorage.getItem('cineinvoice_wizard_draft_' + firebaseUser.uid);
+            if (draftStr) {
+              const d = JSON.parse(draftStr);
+              if (d.name) studioName = d.name;
+              if (d.phone) studioPhone = d.phone;
+              if (d.address) studioAddress = d.address;
+              if (d.type) studioType = d.type;
+              if (d.bankName) studioBank = d.bankName;
+              if (d.bankAccountNumber) studioAcc = d.bankAccountNumber;
+              if (d.bankAccountHolder) studioHolder = d.bankAccountHolder;
+            }
+          } catch {
+            // ignore
+          }
+        }
+
+        if (!studioName) {
+          studioName = firebaseUser.displayName
+            ? `${firebaseUser.displayName} Studio`
+            : (firebaseUser.email ? `${firebaseUser.email.split('@')[0]} Video Studio` : 'Cine Studio');
+        }
+
+        try {
+          resolvedBusiness = await createBusinessWorkspace(
+            {
+              name: studioName,
+              type: studioType,
+              email: firebaseUser.email || '',
+              phone: studioPhone || '0812000000',
+              address: studioAddress,
+              bankName: studioBank,
+              bankAccountNumber: studioAcc,
+              bankAccountHolder: studioHolder,
+            },
+            {
+              uid: firebaseUser.uid,
+              email: firebaseUser.email || '',
+              displayName: firebaseUser.displayName || undefined,
+            }
+          );
+          resolvedRole = 'owner';
+        } catch (initErr) {
+          console.error('Failed to auto-create workspace:', initErr);
+        }
+      }
+
+      if (resolvedBusiness) {
+        setCurrentBusiness(resolvedBusiness);
+        setCurrentRole(resolvedRole);
+        setIsOnboardingNeeded(false);
+
+        if (typeof window !== 'undefined') {
+          try {
+            localStorage.setItem('cineinvoice_active_biz_' + firebaseUser.uid, resolvedBusiness.id);
+          } catch {
+            // ignore
+          }
+        }
+
+        // Ensure user memberships has this business
+        const hasMember = memberships.some((m) => m.businessId === resolvedBusiness!.id);
+        if (!hasMember) {
+          setUserMemberships((prev) => [
+            {
+              userId: firebaseUser.uid,
+              businessId: resolvedBusiness!.id,
+              email: firebaseUser.email || '',
+              name: resolvedBusiness!.name,
+              role: 'owner',
+              joinedAt: resolvedBusiness!.createdAt,
+            },
+            ...prev,
+          ]);
+        }
+      } else {
+        // Fallback only if Firestore write failed completely
+        setIsOnboardingNeeded(true);
       }
     } catch (err) {
       console.error('Error loading user data:', err);
+      setIsOnboardingNeeded(false);
     } finally {
       setLoading(false);
     }
@@ -167,22 +274,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const refreshWorkspaces = async () => {
     if (user) {
-      const memberships = await getUserMemberships(user.uid);
+      const memberships = await getUserMemberships(user.uid, user.email || undefined);
       setUserMemberships(memberships);
-      if (memberships.length === 0) {
-        setIsOnboardingNeeded(true);
-      } else {
-        setIsOnboardingNeeded(false);
+
+      let foundBiz: Business | null = null;
+      let targetRole: MemberRole = 'owner';
+
+      if (memberships.length > 0) {
         const targetId = currentBusiness?.id || profile?.defaultBusinessId || memberships[0].businessId;
-        const updatedBiz = await getBusiness(targetId);
-        if (updatedBiz) {
-          setCurrentBusiness(updatedBiz);
-        } else {
-          const firstBiz = await getBusiness(memberships[0].businessId);
-          if (firstBiz) setCurrentBusiness(firstBiz);
-        }
-        const currentMem = memberships.find((m) => m.businessId === targetId) || memberships[0];
-        if (currentMem) setCurrentRole(currentMem.role);
+        foundBiz = await getBusiness(targetId);
+        if (!foundBiz) foundBiz = await getBusiness(memberships[0].businessId);
+        const currentMem = memberships.find((m) => m.businessId === (foundBiz?.id || targetId)) || memberships[0];
+        if (currentMem) targetRole = currentMem.role;
+      }
+
+      if (!foundBiz) {
+        const owned = await getBusinessesByOwner(user.uid);
+        if (owned.length > 0) foundBiz = owned[0];
+      }
+
+      if (!foundBiz && user.email) {
+        const emailBizs = await getBusinessesByEmail(user.email);
+        if (emailBizs.length > 0) foundBiz = emailBizs[0];
+      }
+
+      if (foundBiz) {
+        setCurrentBusiness(foundBiz);
+        setCurrentRole(targetRole);
+        setIsOnboardingNeeded(false);
       }
     }
   };

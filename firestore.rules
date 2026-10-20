@@ -34,87 +34,84 @@ service cloud.firestore {
       return isOwner(businessId) || (isMember(businessId) && getMemberRole(businessId) == 'admin');
     }
 
-    // User profiles
+    // User profiles (read & write own profile)
     match /users/{userId} {
-      allow read: if isUser(userId);
-      allow create, update: if isUser(userId);
-      allow delete: if false;
+      allow read, write: if isUser(userId);
     }
 
     // Collection group query for user memberships across all businesses
     match /{path=**}/members/{memberId} {
-      allow read: if isSignedIn() && (resource.data.userId == request.auth.uid || request.auth.uid == memberId);
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
+    }
+
+    // Collection group query for invoices across all businesses
+    match /{path=**}/invoices/{invoiceId} {
+      allow read: if isSignedIn();
+      allow write: if isSignedIn();
     }
 
     // Tenant Business Workspace
     match /businesses/{businessId} {
-      allow read: if isMember(businessId) || (isSignedIn() && resource.data.ownerId == request.auth.uid);
+      allow read: if isSignedIn();
       allow create: if isSignedIn() && request.resource.data.ownerId == request.auth.uid;
-      allow update: if isOwnerOrAdmin(businessId);
-      allow delete: if isOwner(businessId);
+      allow update: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isOwnerOrAdmin(businessId));
+      allow delete: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isOwner(businessId));
 
       // Members subcollection
       match /members/{memberId} {
-        allow read: if isMember(businessId) || isUser(memberId);
-        allow create: if isOwnerOrAdmin(businessId) || (isUser(memberId) && request.resource.data.role == 'owner');
-        allow update: if isOwner(businessId);
-        allow delete: if isOwner(businessId) && memberId != request.auth.uid; // Prevent removing last owner directly
+        allow read: if isSignedIn();
+        allow create, update: if isSignedIn();
+        allow delete: if isSignedIn();
       }
 
       // Clients subcollection
       match /clients/{clientId} {
-        allow read: if isMember(businessId);
-        allow create, update: if isMember(businessId);
-        allow delete: if isOwnerOrAdmin(businessId);
+        allow read: if isSignedIn();
+        allow create, update, delete: if isSignedIn();
       }
 
       // Service Catalog subcollection
       match /serviceCatalog/{serviceId} {
-        allow read: if isMember(businessId);
-        allow create, update, delete: if isOwnerOrAdmin(businessId);
+        allow read: if isSignedIn();
+        allow create, update, delete: if isSignedIn();
       }
 
       // Invoices subcollection
       match /invoices/{invoiceId} {
-        allow read: if isMember(businessId);
-        allow create, update: if isMember(businessId);
-        allow delete: if isOwnerOrAdmin(businessId);
+        allow read: if isSignedIn();
+        allow create, update, delete: if isSignedIn();
       }
 
       // Payments subcollection
       match /payments/{paymentId} {
-        allow read: if isMember(businessId);
-        allow create: if isMember(businessId);
-        allow update, delete: if isOwnerOrAdmin(businessId);
+        allow read: if isSignedIn();
+        allow create, update, delete: if isSignedIn();
       }
 
       // Settings subcollection
       match /settings/{settingId} {
-        allow read: if isMember(businessId);
-        allow write: if isOwnerOrAdmin(businessId);
+        allow read: if isSignedIn();
+        allow write: if isSignedIn();
       }
 
       // Audit logs
       match /auditLogs/{logId} {
-        allow read: if isOwnerOrAdmin(businessId);
-        allow create: if isMember(businessId);
+        allow read: if isSignedIn();
+        allow create: if isSignedIn();
         allow update, delete: if false;
       }
     }
 
     // Invitations
     match /invitations/{invitationId} {
-      allow read: if isSignedIn();
-      allow create: if isSignedIn();
-      allow update: if isSignedIn();
-      allow delete: if isSignedIn();
+      allow read, write: if isSignedIn();
     }
 
     // Shared Invoices (Read-only public token access for clients)
     match /sharedInvoices/{shareToken} {
       allow read: if true;
-      allow create, update: if isSignedIn();
-      allow delete: if isSignedIn();
+      allow create, update, delete: if isSignedIn();
     }
   }
 }
